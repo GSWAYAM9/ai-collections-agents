@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'cases' | 'evaluations'>('overview');
   const [evaluationStatus, setEvaluationStatus] = useState('idle');
   const [evaluationMessage, setEvaluationMessage] = useState('');
+  const [hasData, setHasData] = useState(false);
 
   useEffect(() => {
     loadDashboard();
@@ -37,18 +38,18 @@ export default function Dashboard() {
   const loadDashboard = async () => {
     setLoading(true);
     try {
-      // In a real app, fetch actual metrics from your API
-      setMetrics({
-        total_cases: 0,
-        active_cases: 0,
-        resolved_cases: 0,
-        avg_compliance_score: 0,
-        total_conversations: 0,
-        total_cost_usd: 0,
-      });
-      setCases([]);
+      // Try to load from API first, otherwise use empty state
+      const response = await fetch('/api/admin/seed-data', { method: 'POST' });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data) {
+          setMetrics(data.data.metrics);
+          setCases(data.data.cases);
+          setHasData(true);
+        }
+      }
     } catch (error) {
-      console.error('Failed to load dashboard:', error);
+      console.error('[v0] Failed to load dashboard:', error);
     } finally {
       setLoading(false);
     }
@@ -166,6 +167,19 @@ export default function Dashboard() {
             {/* Overview Tab */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
+                {!hasData && (
+                  <div className="p-6 rounded-lg bg-blue-900/30 border border-blue-700">
+                    <p className="text-blue-200 text-sm mb-3">
+                      No data yet. Click the button below to generate test data and populate the dashboard.
+                    </p>
+                    <button
+                      onClick={loadDashboard}
+                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
+                    >
+                      Generate Test Data
+                    </button>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
                     <div className="text-sm text-slate-400 mb-2">Total Cases</div>
@@ -244,23 +258,31 @@ export default function Dashboard() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-white">Cases</h2>
-                  <button className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition">
-                    New Case
+                  <button 
+                    onClick={loadDashboard}
+                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
+                  >
+                    Load Test Data
                   </button>
                 </div>
 
                 {cases.length === 0 ? (
                   <div className="p-12 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
-                    <p className="text-slate-400">
-                      No cases yet. Create a test case or run an evaluation to populate data.
+                    <p className="text-slate-400 mb-4">
+                      No cases yet. Load test data to see sample borrower cases.
                     </p>
+                    <button 
+                      onClick={loadDashboard}
+                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm"
+                    >
+                      Generate Test Data
+                    </button>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-slate-700">
-                          <th className="text-left px-4 py-2 text-slate-300">Case ID</th>
                           <th className="text-left px-4 py-2 text-slate-300">Borrower</th>
                           <th className="text-left px-4 py-2 text-slate-300">Status</th>
                           <th className="text-left px-4 py-2 text-slate-300">Progress</th>
@@ -269,18 +291,21 @@ export default function Dashboard() {
                       </thead>
                       <tbody>
                         {cases.map((c) => (
-                          <tr key={c.id} className="border-b border-slate-700/50">
-                            <td className="px-4 py-3 text-slate-300 text-sm font-mono">
-                              {c.id.slice(0, 8)}...
-                            </td>
-                            <td className="px-4 py-3 text-slate-300">{c.borrower_name}</td>
+                          <tr key={c.id} className="border-b border-slate-700/50 hover:bg-slate-800/30">
+                            <td className="px-4 py-3 text-slate-300 font-medium">{c.borrower_name}</td>
                             <td className="px-4 py-3">
-                              <span className="px-2 py-1 rounded-full bg-slate-700 text-slate-200 text-xs">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                c.status === 'resolved' 
+                                  ? 'bg-green-900/30 border border-green-700 text-green-400'
+                                  : c.status === 'in_negotiation'
+                                  ? 'bg-blue-900/30 border border-blue-700 text-blue-400'
+                                  : 'bg-yellow-900/30 border border-yellow-700 text-yellow-400'
+                              }`}>
                                 {c.status}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-slate-300 text-sm">
-                              {c.retry_count}/{c.max_retries}
+                              {c.retry_count}/{c.max_retries} retries
                             </td>
                             <td className="px-4 py-3 text-slate-400 text-sm">
                               {new Date(c.created_at).toLocaleDateString()}
