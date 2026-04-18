@@ -165,58 +165,29 @@ const createTableStatements = [
     details JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   )`,
+
+  // CREATE INDEXES FOR PERFORMANCE
+  `CREATE INDEX IF NOT EXISTS idx_borrowers_phone ON public.borrowers(phone_number)`,
+  `CREATE INDEX IF NOT EXISTS idx_cases_borrower_id ON public.cases(borrower_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_cases_status ON public.cases(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_conversations_case_id ON public.conversations(case_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON public.messages(conversation_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_conversation_scores_run ON public.conversation_scores(evaluation_run_id)`,
 ];
 
 export async function POST() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceKey) {
-    return NextResponse.json(
-      { error: 'Missing Supabase credentials' },
-      { status: 500 }
-    );
-  }
-
-  try {
-    console.log('[v0] Initializing database schema...');
-    const results = [];
-
-    // Execute each create table statement individually
-    for (const statement of createTableStatements) {
-      try {
-        const response = await fetch(`${supabaseUrl}/rest/v1/`, {
-          method: 'POST',
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=minimal',
-          },
-          // This won't work as intended - we need a different approach
-        });
-      } catch (e) {
-        // Silent fail - continue with next statement
-      }
+  return NextResponse.json({ 
+    success: true,
+    message: 'Database schema retrieved successfully. Copy all SQL and paste into Supabase SQL Editor.',
+    schemaStatements: createTableStatements,
+    instructions: {
+      step1: 'Go to supabase.com and open your Collections AI project',
+      step2: 'Click "SQL Editor" in the left sidebar',
+      step3: 'Click the "New Query" button',
+      step4: 'Click "Copy All SQL" below and paste into the editor',
+      step5: 'Click the "Run" button to execute all statements',
+      step6: 'Refresh this page and you\'ll be ready to create cases',
     }
-
-    // Alternative: Use pg_net or just inform user to run via Supabase UI
-    console.log('[v0] Database initialization: please run schema SQL in Supabase dashboard');
-
-    return NextResponse.json({ 
-      success: true,
-      message: 'Database schema initialization initiated. Please run the SQL in Supabase dashboard at: SQL Editor > New Query',
-      schemaStatements: createTableStatements
-    });
-  } catch (error: any) {
-    console.error('[v0] Error:', error.message);
-    return NextResponse.json(
-      { 
-        error: 'Database initialization requires manual setup',
-        details: 'Please run the provided SQL statements in Supabase dashboard',
-        schemaStatements: createTableStatements
-      },
-      { status: 500 }
-    );
-  }
+  });
 }
+
