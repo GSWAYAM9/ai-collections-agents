@@ -61,6 +61,22 @@ export class ResolutionVoiceAgent {
   }
 
   /**
+   * Format phone number to E.164 format (required by Vapi)
+   * Removes all spaces, dashes, and parentheses
+   */
+  private formatPhoneE164(phone: string): string {
+    // Remove all non-digit characters except the leading +
+    let formatted = phone.replace(/[\s\-\(\)]/g, '');
+    
+    // Add +1 if no country code and not already present
+    if (!formatted.startsWith('+')) {
+      formatted = `+1${formatted}`;
+    }
+    
+    return formatted;
+  }
+
+  /**
    * Initiate outbound call to borrower
    */
   async initiateCall(): Promise<{
@@ -84,7 +100,7 @@ export class ResolutionVoiceAgent {
       const payload: any = {
         phoneNumberId: this.vapiPhoneNumberId,
         customer: {
-          number: this.borrowerData.phone.startsWith('+') ? this.borrowerData.phone : `+1${this.borrowerData.phone}`,
+          number: this.formatPhoneE164(this.borrowerData.phone),
         },
         assistantOverrides: {
           model: {

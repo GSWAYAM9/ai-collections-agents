@@ -28,10 +28,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Ensure phone number has + prefix
-    const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+1${phoneNumber}`;
+    // Ensure phone number has + prefix and is in E.164 format (no dashes or spaces)
+    let formattedPhone = phoneNumber.replace(/[\s\-\(\)]/g, ''); // Remove all spaces, dashes, parentheses
+    if (!formattedPhone.startsWith('+')) {
+      formattedPhone = `+1${formattedPhone}`;
+    }
 
-    console.log('[v0] Testing Vapi API with:', { phoneNumber: formattedPhone, borrowerName });
+    console.log('[v0] Testing Vapi API with:', { originalPhone: phoneNumber, formattedPhone, borrowerName });
 
     // Call Vapi API to initiate a voice call using correct endpoint and payload
     const callPayload: any = {

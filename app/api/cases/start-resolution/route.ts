@@ -34,8 +34,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Ensure phone number has + prefix
-    const formattedPhone = borrowerPhone.startsWith('+') ? borrowerPhone : `+1${borrowerPhone}`;
+    // Ensure phone number is in E.164 format (no dashes or spaces)
+    let formattedPhone = borrowerPhone.replace(/[\s\-\(\)]/g, ''); // Remove all spaces, dashes, parentheses
+    if (!formattedPhone.startsWith('+')) {
+      formattedPhone = `+1${formattedPhone}`;
+    }
+
+    console.log('[v0] Calling Vapi API...');
+    console.log('[v0] Phone:', formattedPhone);
+    console.log('[v0] Phone Number ID:', vapiPhoneNumberId.slice(0, 8) + '...');
 
     // Build payload - assistantId is optional, only include if set
     const vapiPayload: any = {
@@ -86,12 +93,6 @@ Debt Case ID: ${caseId}`,
       },
       firstMessage: `Hi ${borrowerName}, this is a follow-up regarding your debt account. Do you have a few minutes to discuss a payment arrangement that works for your situation?`,
     };
-
-    console.log('[v0] Calling Vapi API...');
-    console.log('[v0] Phone:', formattedPhone);
-    console.log('[v0] Phone Number ID:', vapiPhoneNumberId.slice(0, 8) + '...');
-
-    const vapiResponse = await fetch('https://api.vapi.ai/call', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${vapiApiKey}`,
