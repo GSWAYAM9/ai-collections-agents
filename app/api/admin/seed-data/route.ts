@@ -37,7 +37,7 @@ export async function POST() {
       resolved_cases: testCases.filter((c) => c.status === 'resolved').length,
       avg_compliance_score: 0.96 + Math.random() * 0.03,
       total_conversations: testCases.length * (2 + Math.floor(Math.random() * 2)),
-      total_cost_usd: (testCases.length * 0.15).toFixed(2),
+      total_cost_usd: parseFloat((testCases.length * 0.15).toFixed(2)),
     };
 
     console.log('[v0] Seeded data:', {

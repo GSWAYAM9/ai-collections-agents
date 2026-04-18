@@ -221,7 +221,7 @@ export default function Dashboard() {
                   <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
                     <div className="text-sm text-slate-400 mb-2">Total Cost (USD)</div>
                     <div className="text-3xl font-bold text-red-400">
-                      ${metrics?.total_cost_usd.toFixed(2) || '0.00'}
+                      ${typeof metrics?.total_cost_usd === 'number' ? metrics.total_cost_usd.toFixed(2) : '0.00'}
                     </div>
                   </div>
                 </div>
