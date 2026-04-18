@@ -48,8 +48,8 @@ export default function DemoPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: '+1-555-0123',
-          borrowerName: 'John Doe',
+          phoneNumber: '+919876543210',
+          borrowerName: 'Rajesh Kumar',
         }),
       });
 
@@ -62,7 +62,7 @@ export default function DemoPage() {
         );
       } else {
         setVapiTest('error');
-        setVapiResult(`✗ Error: ${data.error}`);
+        setVapiResult(`✗ Error: ${data.error}\n\nDetails: ${data.details || ''}`);
       }
     } catch (error: any) {
       setVapiTest('error');
