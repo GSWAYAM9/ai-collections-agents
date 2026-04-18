@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
         'Authorization': `Bearer ${vapiApiKey}`,
       },
       body: JSON.stringify({
-        assistantId: 'resolution-agent',
+        assistantId: process.env.VAPI_ASSISTANT_ID || '550e8400-e29b-41d4-a716-446655440000',
         phoneNumberId: vapiPhoneNumberId,
         customer: {
           number: formattedPhone,
@@ -72,7 +72,7 @@ Start by introducing yourself and explaining the purpose of the call.`,
             ],
           },
           voice: {
-            provider: 'eleven-labs',
+            provider: '11labs',
             voiceId: 'paula',
           },
           firstMessage: `Hi ${borrowerName}, I'm calling to help you with a resolution on your account. Do you have a few minutes to talk?`,
