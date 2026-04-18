@@ -78,18 +78,23 @@ export default function Dashboard() {
         const complianceScore = typeof data.evaluation.avg_compliance_score === 'number' 
           ? (data.evaluation.avg_compliance_score * 100).toFixed(1)
           : parseFloat(data.evaluation.avg_compliance_score) * 100;
-        const msg = `✓ Evaluation complete: ${data.evaluation.total_conversations} conversations evaluated. 
-        Avg Resolution: ${(data.evaluation.avg_resolution_rate * 100).toFixed(1)}%, 
-        Compliance: ${complianceScore}%, 
-        Cost: $${data.totalCost}`;
+        const msg = `✓ Evaluation complete: ${data.evaluation.total_conversations} conversations evaluated. Avg Resolution: ${(data.evaluation.avg_resolution_rate * 100).toFixed(1)}%, Compliance: ${complianceScore}%, Cost: $${data.totalCost}`;
         setEvaluationMessage(msg);
-        setTimeout(() => loadDashboard(), 2000);
+        setTimeout(() => {
+          setEvaluationStatus('idle');
+          setEvaluationMessage('');
+          loadDashboard();
+        }, 3000);
       } else {
         throw new Error(data.error || 'Unknown error');
       }
     } catch (error: any) {
       setEvaluationStatus('error');
       setEvaluationMessage(`✗ Error: ${error.message}`);
+      setTimeout(() => {
+        setEvaluationStatus('idle');
+        setEvaluationMessage('');
+      }, 4000);
     }
   };
 
@@ -117,14 +122,22 @@ export default function Dashboard() {
       if (data.success && data.variant) {
         setEvaluationStatus('success');
         setEvaluationMessage(
-          `✓ Generated new ${data.variant.agent_name} variant: ${data.variant.variant_letter}. Expected: ${data.variant.metadata.expected_improvement}`
+          `✓ Generated new ${data.variant.agent_name} variant: ${data.variant.variant_letter}. Expected improvement: ${data.variant.metadata.expected_improvement}`
         );
+        setTimeout(() => {
+          setEvaluationStatus('idle');
+          setEvaluationMessage('');
+        }, 4000);
       } else {
         throw new Error(data.error || 'Unknown error');
       }
     } catch (error: any) {
       setEvaluationStatus('error');
       setEvaluationMessage(`✗ Error: ${error.message}`);
+      setTimeout(() => {
+        setEvaluationStatus('idle');
+        setEvaluationMessage('');
+      }, 4000);
     }
   };
 
@@ -490,17 +503,33 @@ export default function Dashboard() {
                 {/* Status Message */}
                 {evaluationMessage && (
                   <div
-                    className={`p-4 rounded-lg ${
+                    className={`p-6 rounded-lg border transition-all animate-in fade-in ${
                       evaluationStatus === 'success'
-                        ? 'bg-green-900/30 border border-green-700 text-green-200'
+                        ? 'bg-green-900/30 border-green-700 text-green-200'
                         : evaluationStatus === 'error'
-                        ? 'bg-red-900/30 border border-red-700 text-red-200'
+                        ? 'bg-red-900/30 border-red-700 text-red-200'
                         : evaluationStatus === 'loading'
-                        ? 'bg-blue-900/30 border border-blue-700 text-blue-200'
-                        : ''
+                        ? 'bg-blue-900/30 border-blue-700 text-blue-200'
+                        : 'bg-slate-800/50 border-slate-700 text-slate-200'
                     }`}
                   >
-                    {evaluationMessage}
+                    <div className="flex items-start gap-3">
+                      {evaluationStatus === 'loading' && (
+                        <div className="animate-spin h-5 w-5 border-2 border-blue-400 border-t-blue-200 rounded-full mt-0.5"></div>
+                      )}
+                      {evaluationStatus === 'success' && (
+                        <span className="text-green-400 font-bold text-lg mt-0.5">✓</span>
+                      )}
+                      {evaluationStatus === 'error' && (
+                        <span className="text-red-400 font-bold text-lg mt-0.5">✗</span>
+                      )}
+                      <div>
+                        <p className="font-medium">{evaluationMessage}</p>
+                        {evaluationStatus === 'loading' && (
+                          <p className="text-sm opacity-75 mt-1">Please wait...</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 
