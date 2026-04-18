@@ -12,6 +12,8 @@ export async function POST(req: NextRequest) {
     }
 
     const vapiApiKey = process.env.VAPI_API_KEY;
+    const vapiPhoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
+
     if (!vapiApiKey) {
       return NextResponse.json(
         { error: 'VAPI_API_KEY not configured' },
@@ -19,9 +21,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log('[v0] Testing Vapi API with:', { phoneNumber, borrowerName });
+    if (!vapiPhoneNumberId) {
+      return NextResponse.json(
+        { error: 'VAPI_PHONE_NUMBER_ID not configured' },
+        { status: 500 }
+      );
+    }
 
-    // Call Vapi API to initiate a voice call
+    // Ensure phone number has + prefix
+    const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+1${phoneNumber}`;
+
+    console.log('[v0] Testing Vapi API with:', { phoneNumber: formattedPhone, borrowerName });
+
+    // Call Vapi API to initiate a voice call using correct endpoint and payload
     const vapiResponse = await fetch('https://api.vapi.ai/call', {
       method: 'POST',
       headers: {
@@ -29,16 +41,21 @@ export async function POST(req: NextRequest) {
         'Authorization': `Bearer ${vapiApiKey}`,
       },
       body: JSON.stringify({
-        phoneNumber,
-        customerName: borrowerName,
-        model: {
-          provider: 'openai',
-          model: 'gpt-4',
-          messages: [
-            {
-              role: 'system',
-              content: `You are a professional debt resolution agent. Your goal is to reach a mutually beneficial payment arrangement with the borrower. 
-              
+        assistantId: 'resolution-agent',
+        phoneNumberId: vapiPhoneNumberId,
+        customer: {
+          number: formattedPhone,
+        },
+        assistantOverrides: {
+          model: {
+            provider: 'anthropic',
+            model: 'claude-3-5-sonnet-20241022',
+            temperature: 0.7,
+            messages: [
+              {
+                role: 'system',
+                content: `You are a professional debt resolution agent. Your goal is to reach a mutually beneficial payment arrangement with the borrower.
+                
 Key guidelines:
 - Be professional and empathetic
 - Explain available payment options clearly
@@ -48,56 +65,59 @@ Key guidelines:
 - Never threaten or misrepresent consequences
 - Comply with all FDCPA regulations
 
+Borrower: ${borrowerName}
+
 Start by introducing yourself and explaining the purpose of the call.`,
-            },
-          ],
-        },
-        voiceConfig: {
-          provider: 'openai',
-          voiceId: 'onyx',
+              },
+            ],
+          },
+          voice: {
+            provider: 'eleven-labs',
+            voiceId: 'paula',
+          },
+          firstMessage: `Hi ${borrowerName}, I'm calling to help you with a resolution on your account. Do you have a few minutes to talk?`,
         },
       }),
     });
 
-    if (!vapiResponse.ok) {
-      const errorText = await vapiResponse.text();
-      console.error('[v0] Vapi error response:', vapiResponse.status, errorText);
-      
-      // Return mock success for demo purposes if real API fails
-      return NextResponse.json({
-        success: true,
-        callId: `demo-call-${Date.now()}`,
-        status: 'initiated-demo',
-        phoneNumber,
-        borrowerName,
-        message: 'Demo: Voice call would be initiated with Vapi. (Check VAPI_API_KEY configuration)',
-        debug: {
-          vapiStatus: vapiResponse.status,
-          hasApiKey: !!vapiApiKey,
-          error: errorText.substring(0, 200),
-        },
-      });
-    }
-
     const callData = await vapiResponse.json();
 
-    console.log('[v0] Vapi call initiated:', callData);
+    if (!vapiResponse.ok) {
+      console.error('[v0] Vapi error response:', {
+        status: vapiResponse.status,
+        error: callData,
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Vapi API call failed',
+          details: callData.message || callData.error || 'Unknown error',
+          vapiStatus: vapiResponse.status,
+        },
+        { status: vapiResponse.status || 500 }
+      );
+    }
+
+    console.log('[v0] Vapi call initiated:', callData.id);
 
     return NextResponse.json({
       success: true,
-      callId: callData.id || `call-${Date.now()}`,
+      callId: callData.id,
       status: 'initiated',
-      phoneNumber,
+      phoneNumber: formattedPhone,
       borrowerName,
       message: 'Voice call initiated. The resolution agent will contact the borrower.',
     });
   } catch (error: any) {
-    console.error('[v0] Vapi test error:', error);
+    console.error('[v0] Vapi test error:', {
+      message: error.message,
+      stack: error.stack,
+    });
     return NextResponse.json(
       {
         error: error.message || 'Failed to test Vapi API',
         details: error.message,
-        suggestion: 'Make sure VAPI_API_KEY is set and valid',
+        suggestion: 'Make sure VAPI_API_KEY and VAPI_PHONE_NUMBER_ID are properly configured',
       },
       { status: 500 }
     );
