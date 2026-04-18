@@ -30,6 +30,9 @@ export default function Dashboard() {
   const [evaluationStatus, setEvaluationStatus] = useState('idle');
   const [evaluationMessage, setEvaluationMessage] = useState('');
   const [hasData, setHasData] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [casesPerPage] = useState(12);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     loadDashboard();
@@ -37,6 +40,7 @@ export default function Dashboard() {
 
   const loadDashboard = async () => {
     setLoading(true);
+    setCurrentPage(1);
     try {
       // Try to load from API first, otherwise use empty state
       const response = await fetch('/api/admin/seed-data', { method: 'POST' });
@@ -296,77 +300,150 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {cases.map((c) => (
-                      <div key={c.id} className="p-4 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-slate-600 transition">
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <h3 className="text-lg font-semibold text-white">{c.borrower_name}</h3>
-                            <p className="text-xs text-slate-400">Case ID: {c.id.slice(0, 12)}...</p>
+                    {/* Status Filter */}
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => {setStatusFilter(null); setCurrentPage(1);}}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                          statusFilter === null
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                        }`}
+                      >
+                        All ({cases.length})
+                      </button>
+                      {['initial_contact', 'assessment_complete', 'in_negotiation', 'final_notice', 'resolved', 'escalated'].map((status) => {
+                        const count = cases.filter(c => c.status === status).length;
+                        return (
+                          <button
+                            key={status}
+                            onClick={() => {setStatusFilter(status); setCurrentPage(1);}}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                              statusFilter === status
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                            }`}
+                          >
+                            {status.replace(/_/g, ' ')} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Cases Grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {cases
+                        .filter(c => !statusFilter || c.status === statusFilter)
+                        .slice((currentPage - 1) * casesPerPage, currentPage * casesPerPage)
+                        .map((c) => (
+                        <div key={c.id} className="p-4 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-slate-600 transition">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h3 className="text-lg font-semibold text-white">{c.borrower_name}</h3>
+                              <p className="text-xs text-slate-400">Case ID: {c.id.slice(0, 12)}...</p>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                              c.status === 'resolved' 
+                                ? 'bg-green-900/30 border border-green-700 text-green-400'
+                                : c.status === 'in_negotiation'
+                                ? 'bg-blue-900/30 border border-blue-700 text-blue-400'
+                                : c.status === 'initial_contact' || c.status === 'assessment_complete'
+                                ? 'bg-yellow-900/30 border border-yellow-700 text-yellow-400'
+                                : c.status === 'escalated'
+                                ? 'bg-red-900/30 border border-red-700 text-red-400'
+                                : 'bg-purple-900/30 border border-purple-700 text-purple-400'
+                            }`}>
+                              {c.status?.replace(/_/g, ' ').toUpperCase()}
+                            </span>
                           </div>
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            c.status === 'resolved' 
-                              ? 'bg-green-900/30 border border-green-700 text-green-400'
-                              : c.status === 'in_resolution' || c.status === 'in_negotiation'
-                              ? 'bg-blue-900/30 border border-blue-700 text-blue-400'
-                              : c.status === 'initial_contact' || c.status === 'assessment'
-                              ? 'bg-yellow-900/30 border border-yellow-700 text-yellow-400'
-                              : 'bg-purple-900/30 border border-purple-700 text-purple-400'
-                          }`}>
-                            {c.status?.replace(/_/g, ' ').toUpperCase()}
-                          </span>
-                        </div>
-                        
-                        <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
-                          <div>
-                            <p className="text-slate-400">Retries</p>
-                            <p className="text-white font-semibold">{c.retry_count}/{c.max_retries}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-400">Created</p>
-                            <p className="text-white font-semibold">{new Date(c.created_at).toLocaleDateString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-400">Progress</p>
-                            <div className="mt-1 h-2 bg-slate-900/50 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-blue-600"
-                                style={{ width: `${(33 * (['initial_contact', 'assessment'].includes(c.status) ? 1 : ['in_resolution', 'in_negotiation'].includes(c.status) ? 2 : 3)) / 3 * 100}%` }}
-                              ></div>
+                          
+                          <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
+                            <div>
+                              <p className="text-slate-400">Retries</p>
+                              <p className="text-white font-semibold">{c.retry_count}/{c.max_retries}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-400">Created</p>
+                              <p className="text-white font-semibold">{new Date(c.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-400">Progress</p>
+                              <div className="mt-1 h-2 bg-slate-900/50 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-blue-600"
+                                  style={{ 
+                                    width: `${
+                                      c.status === 'resolved' ? 100 :
+                                      c.status === 'escalated' ? 75 :
+                                      c.status === 'final_notice' ? 75 :
+                                      c.status === 'in_negotiation' ? 50 :
+                                      c.status === 'assessment_complete' ? 40 : 20
+                                    }%` 
+                                  }}
+                                ></div>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="flex gap-2">
-                          <Link
-                            href={`/cases/${c.id}`}
-                            className="flex-1 text-center px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-sm font-medium"
-                          >
-                            View Details
-                          </Link>
-                          {['initial_contact', 'assessment'].includes(c.status) && (
-                            <button
-                              className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
+                          <div className="flex gap-2">
+                            <Link
+                              href={`/cases/${c.id}`}
+                              className="flex-1 text-center px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-sm font-medium"
                             >
-                              Move to Resolution
-                            </button>
-                          )}
-                          {['in_resolution', 'in_negotiation'].includes(c.status) && (
-                            <button
-                              className="flex-1 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition text-sm font-medium"
-                            >
-                              Move to Final Notice
-                            </button>
-                          )}
-                          {['final_notice', 'escalated'].includes(c.status) && (
-                            <button
-                              className="flex-1 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition text-sm font-medium"
-                            >
-                              Mark Resolved
-                            </button>
-                          )}
+                              View Details
+                            </Link>
+                            {['initial_contact'].includes(c.status) && (
+                              <button className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium">
+                                Assess
+                              </button>
+                            )}
+                            {['assessment_complete'].includes(c.status) && (
+                              <button className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium">
+                                Negotiate
+                              </button>
+                            )}
+                            {['in_negotiation'].includes(c.status) && (
+                              <button className="flex-1 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition text-sm font-medium">
+                                Final Notice
+                              </button>
+                            )}
+                          </div>
                         </div>
+                      ))}
+                    </div>
+
+                    {/* Pagination */}
+                    {cases.filter(c => !statusFilter || c.status === statusFilter).length > casesPerPage && (
+                      <div className="flex justify-center gap-2 mt-6">
+                        <button
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 transition text-sm font-medium"
+                        >
+                          Previous
+                        </button>
+                        {Array.from({length: Math.ceil(cases.filter(c => !statusFilter || c.status === statusFilter).length / casesPerPage)}).map((_, i) => (
+                          <button
+                            key={i + 1}
+                            onClick={() => setCurrentPage(i + 1)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                              currentPage === i + 1
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                            }`}
+                          >
+                            {i + 1}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setCurrentPage(p => p + 1)}
+                          disabled={currentPage * casesPerPage >= cases.filter(c => !statusFilter || c.status === statusFilter).length}
+                          className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 transition text-sm font-medium"
+                        >
+                          Next
+                        </button>
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
