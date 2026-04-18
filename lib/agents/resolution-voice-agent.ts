@@ -63,14 +63,27 @@ export class ResolutionVoiceAgent {
   /**
    * Format phone number to E.164 format (required by Vapi)
    * Removes all spaces, dashes, and parentheses
+   * Validates that the result is a valid E.164 phone number
    */
   private formatPhoneE164(phone: string): string {
     // Remove all non-digit characters except the leading +
     let formatted = phone.replace(/[\s\-\(\)]/g, '');
     
-    // Add +1 if no country code and not already present
+    // Add country code if missing
     if (!formatted.startsWith('+')) {
-      formatted = `+1${formatted}`;
+      // Check if it looks like a US number (10 digits)
+      if (formatted.match(/^\d{10}$/)) {
+        formatted = `+1${formatted}`;
+      } else {
+        formatted = `+${formatted}`;
+      }
+    }
+    
+    // Validate E.164 format: + followed by 1-15 digits
+    if (!formatted.match(/^\+[1-9]\d{1,14}$/)) {
+      throw new Error(
+        `Invalid phone number format. E.164 format required: +[country code][number]. Got: ${formatted}`
+      );
     }
     
     return formatted;
