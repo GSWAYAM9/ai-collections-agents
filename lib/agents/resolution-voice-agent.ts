@@ -86,7 +86,7 @@ export class ResolutionVoiceAgent {
         customer: {
           number: this.borrowerData.phone.startsWith('+') ? this.borrowerData.phone : `+1${this.borrowerData.phone}`,
         },
-        assistantId: 'resolution-agent',
+        assistantId: process.env.VAPI_ASSISTANT_ID || '550e8400-e29b-41d4-a716-446655440000',
         assistantOverrides: {
           model: {
             provider: 'anthropic',
@@ -100,7 +100,7 @@ export class ResolutionVoiceAgent {
             ],
           },
           voice: {
-            provider: 'eleven-labs',
+            provider: '11labs',
             voiceId: 'paula',
           },
           firstMessage: this.getInitialGreeting(),

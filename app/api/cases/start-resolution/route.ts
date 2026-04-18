@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const formattedPhone = borrowerPhone.startsWith('+') ? borrowerPhone : `+1${borrowerPhone}`;
 
     const vapiPayload = {
-      assistantId: 'resolution-agent',
+      assistantId: process.env.VAPI_ASSISTANT_ID || '550e8400-e29b-41d4-a716-446655440000', // Default UUID if not set
       phoneNumberId: vapiPhoneNumberId,
       customer: {
         number: formattedPhone,
@@ -73,7 +73,7 @@ Debt Case ID: ${caseId}`,
           ],
         },
         voice: {
-          provider: 'eleven-labs',
+          provider: '11labs',
           voiceId: 'paula',
         },
         firstMessage: `Hi ${borrowerName}, this is a follow-up regarding your debt account. Do you have a few minutes to discuss a payment arrangement that works for your situation?`,
