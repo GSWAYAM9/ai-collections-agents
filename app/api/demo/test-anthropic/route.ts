@@ -41,7 +41,7 @@ Important FDCPA Compliance Requirements:
 Generate a helpful, empathetic response that moves the conversation forward while maintaining compliance.`;
 
     const response = await client.messages.create({
-      model: 'claude-3-5-sonnet-20250514',
+      model: 'claude-3-5-sonnet-20241022',
       max_tokens: 500,
       system: systemPrompt,
       messages: [
@@ -76,7 +76,7 @@ Generate a helpful, empathetic response that moves the conversation forward whil
       inputTokens,
       outputTokens,
       cost: totalCost.toFixed(6),
-      model: 'claude-3-5-sonnet-20250514',
+      model: 'claude-3-5-sonnet-20241022',
     });
   } catch (error: any) {
     console.error('[v0] Anthropic test error:', error);
