@@ -16,6 +16,11 @@ export default function CaseDetailsPage() {
   const [activeAgent, setActiveAgent] = useState<'assessment' | 'resolution' | 'final_notice'>('assessment');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [voiceCallActive, setVoiceCallActive] = useState(false);
+  const [voiceCallId, setVoiceCallId] = useState<string | null>(null);
+  const [voiceCallStatus, setVoiceCallStatus] = useState<string>('idle');
+  const [voiceCallDuration, setVoiceCallDuration] = useState(0);
+  const [voiceTranscript, setVoiceTranscript] = useState<string>('');
 
   useEffect(() => {
     loadCaseDetails();
@@ -106,6 +111,102 @@ export default function CaseDetailsPage() {
     setCaseData(prev => ({ ...prev, status: newStatus }));
   };
 
+  const initiateVoiceCall = async () => {
+    try {
+      setVoiceCallStatus('initiating');
+      setVoiceCallActive(true);
+
+      const response = await fetch('/api/voice/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseId: caseId,
+          borrowerData: {
+            id: caseData?.id,
+            name: caseData?.borrower_name,
+            phone: caseData?.phone,
+            debtAmount: caseData?.debt_amount,
+            debtAgeDays: caseData?.debt_age,
+          },
+          phoneNumberId: process.env.NEXT_PUBLIC_VAPI_PHONE_NUMBER_ID,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to initiate call');
+      }
+
+      const data = await response.json();
+      setVoiceCallId(data.callId);
+      setVoiceCallStatus('ringing');
+
+      // Poll for call status
+      startCallStatusPolling(data.callId);
+    } catch (error: any) {
+      console.error('[v0] Voice call error:', error);
+      setVoiceCallStatus('error');
+      alert(`Error initiating call: ${error.message}`);
+    }
+  };
+
+  const startCallStatusPolling = (callId: string) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/voice/status?callId=${callId}`);
+        if (!response.ok) {
+          clearInterval(pollInterval);
+          return;
+        }
+
+        const callData = await response.json();
+        setVoiceCallStatus(callData.status);
+        setVoiceCallDuration(callData.duration || 0);
+
+        if (callData.transcript) {
+          setVoiceTranscript(callData.transcript);
+        }
+
+        // Stop polling when call ends
+        if (callData.status === 'ended') {
+          clearInterval(pollInterval);
+          setVoiceCallActive(false);
+          // Parse transcript and update case
+          if (callData.summary) {
+            setConversations(prev => [{
+              ...prev[0],
+              messages: [
+                ...prev[0]?.messages || [],
+                { role: 'assistant', content: callData.summary }
+              ]
+            }]);
+          }
+        }
+      } catch (error) {
+        console.error('[v0] Error polling call status:', error);
+      }
+    }, 2000); // Poll every 2 seconds
+  };
+
+  const endVoiceCall = async () => {
+    if (!voiceCallId) return;
+
+    try {
+      const response = await fetch('/api/voice/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callId: voiceCallId }),
+      });
+
+      if (response.ok) {
+        setVoiceCallActive(false);
+        setVoiceCallStatus('ended');
+      }
+    } catch (error: any) {
+      console.error('[v0] Error ending call:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center">
@@ -165,7 +266,7 @@ export default function CaseDetailsPage() {
         </div>
 
         {/* Agent Selection Tabs */}
-        <div className="flex gap-4 mb-6">
+        <div className="flex gap-4 mb-6 flex-wrap">
           {(['assessment', 'resolution', 'final_notice'] as const).map((agent) => (
             <button
               key={agent}
@@ -179,7 +280,46 @@ export default function CaseDetailsPage() {
               {agent === 'final_notice' ? 'Final Notice' : agent.charAt(0).toUpperCase() + agent.slice(1)}
             </button>
           ))}
+          
+          {/* Voice Call Button */}
+          <button
+            onClick={voiceCallActive ? endVoiceCall : initiateVoiceCall}
+            disabled={!caseData?.phone}
+            className={`px-6 py-2 rounded-lg transition font-medium ${
+              voiceCallActive
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-green-600 hover:bg-green-700 text-white disabled:bg-slate-700 disabled:text-slate-500'
+            }`}
+          >
+            {voiceCallActive ? `Call Active (${Math.floor(voiceCallDuration)}s)` : '📞 Start Voice Call'}
+          </button>
         </div>
+
+        {/* Voice Call Status Panel */}
+        {voiceCallActive && (
+          <div className="bg-slate-800/50 border-2 border-green-600 rounded-lg p-4 mb-6">
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex items-center gap-3">
+                <div className="animate-pulse w-3 h-3 rounded-full bg-green-500"></div>
+                <span className="text-white font-semibold">Voice Call in Progress</span>
+              </div>
+              <span className="text-slate-300 text-sm">Duration: {Math.floor(voiceCallDuration)} seconds</span>
+            </div>
+            <p className="text-slate-300 text-sm mb-3">Status: <span className="text-green-400 font-semibold capitalize">{voiceCallStatus}</span></p>
+            {voiceTranscript && (
+              <div className="bg-slate-900/50 rounded p-3 max-h-32 overflow-y-auto">
+                <p className="text-slate-200 text-sm"><strong>Live Transcript:</strong></p>
+                <p className="text-slate-300 text-sm mt-2">{voiceTranscript.slice(0, 200)}...</p>
+              </div>
+            )}
+            <button
+              onClick={endVoiceCall}
+              className="mt-3 w-full px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition font-medium"
+            >
+              End Call
+            </button>
+          </div>
+        )}
 
         {/* Conversation Display */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
