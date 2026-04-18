@@ -75,9 +75,12 @@ export default function Dashboard() {
 
       if (data.success && data.evaluation) {
         setEvaluationStatus('success');
+        const complianceScore = typeof data.evaluation.avg_compliance_score === 'number' 
+          ? (data.evaluation.avg_compliance_score * 100).toFixed(1)
+          : parseFloat(data.evaluation.avg_compliance_score) * 100;
         const msg = `✓ Evaluation complete: ${data.evaluation.total_conversations} conversations evaluated. 
         Avg Resolution: ${(data.evaluation.avg_resolution_rate * 100).toFixed(1)}%, 
-        Compliance: ${(data.evaluation.avg_compliance_score * 100).toFixed(1)}%, 
+        Compliance: ${complianceScore}%, 
         Cost: $${data.totalCost}`;
         setEvaluationMessage(msg);
         setTimeout(() => loadDashboard(), 2000);
@@ -202,7 +205,7 @@ export default function Dashboard() {
                   <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
                     <div className="text-sm text-slate-400 mb-2">Avg Compliance Score</div>
                     <div className="text-4xl font-bold text-blue-400">
-                      {metrics?.avg_compliance_score.toFixed(1) || 0}%
+                      {metrics?.avg_compliance_score ? (metrics.avg_compliance_score * 100).toFixed(1) : 0}%
                     </div>
                   </div>
                 </div>
