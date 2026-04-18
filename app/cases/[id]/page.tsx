@@ -2,29 +2,41 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 
 export default function CaseDetailsPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const caseId = params.id as string;
+  const action = searchParams.get('action') || null;
   
   const [caseData, setCaseData] = useState<any>(null);
   const [conversations, setConversations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeAgent, setActiveAgent] = useState<'assessment' | 'resolution' | 'final_notice'>('assessment');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     loadCaseDetails();
-  }, [caseId]);
+    if (action) {
+      // Perform action if passed via URL
+      handleAction(action);
+    }
+  }, [caseId, action]);
 
   const loadCaseDetails = async () => {
     try {
       // In a real app, fetch from API
-      // For now, show placeholder
+      // For now, show placeholder with realistic data
       setCaseData({
         id: caseId,
-        borrower_id: '...',
+        borrower_name: 'John Martinez',
+        phone: '+1-555-0101',
+        email: 'john@example.com',
         status: 'in_assessment',
+        debt_amount: 2500,
+        debt_age: 120,
         retry_count: 0,
         max_retries: 3,
         created_at: new Date().toISOString(),
@@ -35,9 +47,10 @@ export default function CaseDetailsPage() {
           agent_name: 'assessment',
           medium: 'chat',
           status: 'in_progress',
+          created_at: new Date().toISOString(),
           messages: [
             { role: 'user', content: 'Hello?' },
-            { role: 'assistant', content: 'Hi, this is regarding a debt...' },
+            { role: 'assistant', content: 'Hello, I\'m calling about a debt of $2,500.00 that you may owe. Could you help me understand your current financial situation?' },
           ],
         },
       ]);
@@ -46,6 +59,51 @@ export default function CaseDetailsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAction = (actionType: string) => {
+    switch (actionType) {
+      case 'assess':
+        setActiveAgent('assessment');
+        break;
+      case 'negotiate':
+        setActiveAgent('resolution');
+        break;
+      case 'final_notice':
+        setActiveAgent('final_notice');
+        break;
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!message.trim()) return;
+    
+    setSending(true);
+    try {
+      // Add user message to conversation
+      setConversations(prev => prev.map((conv, idx) => 
+        idx === 0 
+          ? { ...conv, messages: [...conv.messages, { role: 'user', content: message }] }
+          : conv
+      ));
+      
+      setMessage('');
+      
+      // Simulate agent response
+      setTimeout(() => {
+        setConversations(prev => prev.map((conv, idx) => 
+          idx === 0 
+            ? { ...conv, messages: [...conv.messages, { role: 'assistant', content: 'I understand your situation. Would you be interested in discussing a payment plan?' }] }
+            : conv
+        ));
+      }, 1000);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    setCaseData(prev => ({ ...prev, status: newStatus }));
   };
 
   if (loading) {
@@ -89,14 +147,18 @@ export default function CaseDetailsPage() {
         <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 mb-6">
           <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-3xl font-bold text-white mb-2">Case: {caseId.slice(0, 8)}...</h1>
-              <p className="text-slate-400">Status: <span className="text-yellow-400 font-semibold">{caseData?.status}</span></p>
+              <h1 className="text-3xl font-bold text-white mb-2">{caseData?.borrower_name}</h1>
+              <p className="text-slate-400">Case ID: {caseId.slice(0, 12)}...</p>
+              <p className="text-slate-400">Status: <span className="text-yellow-400 font-semibold capitalize">{caseData?.status.replace(/_/g, ' ')}</span></p>
               <p className="text-slate-400">Created: {new Date(caseData?.created_at).toLocaleString()}</p>
             </div>
             <div className="text-right">
-              <p className="text-slate-300 text-sm">Retries: {caseData?.retry_count}/{caseData?.max_retries}</p>
-              <button className="mt-4 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm">
-                Move to Next Agent
+              <p className="text-slate-300 text-sm mb-3">Retries: {caseData?.retry_count}/{caseData?.max_retries}</p>
+              <button 
+                onClick={() => handleStatusChange('resolved')}
+                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition text-sm font-medium"
+              >
+                Mark as Resolved
               </button>
             </div>
           </div>
@@ -104,10 +166,10 @@ export default function CaseDetailsPage() {
 
         {/* Agent Selection Tabs */}
         <div className="flex gap-4 mb-6">
-          {['assessment', 'resolution', 'final_notice'].map((agent) => (
+          {(['assessment', 'resolution', 'final_notice'] as const).map((agent) => (
             <button
               key={agent}
-              onClick={() => setActiveAgent(agent as any)}
+              onClick={() => setActiveAgent(agent)}
               className={`px-6 py-2 rounded-lg transition font-medium capitalize ${
                 activeAgent === agent
                   ? 'bg-blue-600 text-white'
@@ -126,7 +188,7 @@ export default function CaseDetailsPage() {
             <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
               <h2 className="text-xl font-bold text-white mb-4">Conversation</h2>
               
-              <div className="space-y-4 max-h-96 overflow-y-auto">
+              <div className="space-y-4 max-h-96 overflow-y-auto mb-6">
                 {conversations[0]?.messages?.map((msg: any, idx: number) => (
                   <div
                     key={idx}
@@ -147,15 +209,24 @@ export default function CaseDetailsPage() {
               </div>
 
               {/* Message Input */}
-              <div className="mt-4 pt-4 border-t border-slate-700">
-                <input
-                  type="text"
-                  placeholder="Type agent response..."
-                  className="w-full px-4 py-2 rounded-lg bg-slate-900/50 border border-slate-600 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-                />
-                <button className="mt-2 w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition font-medium">
-                  Send Message
-                </button>
+              <div className="pt-4 border-t border-slate-700">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Type response or continue conversation..."
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                    className="flex-1 px-4 py-2 rounded-lg bg-slate-900/50 border border-slate-600 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                  />
+                  <button 
+                    onClick={handleSendMessage}
+                    disabled={sending || !message.trim()}
+                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white transition font-medium"
+                  >
+                    {sending ? '...' : 'Send'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -167,31 +238,56 @@ export default function CaseDetailsPage() {
               
               <div className="space-y-4 text-sm">
                 <div>
-                  <p className="text-slate-400">Borrower</p>
-                  <p className="text-white font-semibold">John Smith</p>
+                  <p className="text-slate-400">Borrower Name</p>
+                  <p className="text-white font-semibold">{caseData?.borrower_name}</p>
                 </div>
                 
                 <div>
                   <p className="text-slate-400">Phone</p>
-                  <p className="text-white font-semibold">+1-555-0100</p>
+                  <p className="text-white font-semibold">{caseData?.phone}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-400">Email</p>
+                  <p className="text-white font-semibold">{caseData?.email || 'Not provided'}</p>
                 </div>
                 
                 <div>
                   <p className="text-slate-400">Debt Amount</p>
-                  <p className="text-white font-semibold">$5,000.00</p>
+                  <p className="text-white font-semibold">${(caseData?.debt_amount / 100).toFixed(2)}</p>
                 </div>
                 
                 <div>
                   <p className="text-slate-400">Debt Age</p>
-                  <p className="text-white font-semibold">90 days</p>
+                  <p className="text-white font-semibold">{caseData?.debt_age} days</p>
                 </div>
 
                 <div className="pt-4 border-t border-slate-700">
-                  <p className="text-slate-400 mb-2">Status History</p>
-                  <div className="space-y-1 text-xs">
-                    <p className="text-green-400">✓ Assessment - In Progress</p>
-                    <p className="text-slate-400">- Resolution - Pending</p>
-                    <p className="text-slate-400">- Final Notice - Pending</p>
+                  <p className="text-slate-400 mb-2">Current Status</p>
+                  <p className="text-white font-semibold capitalize">{caseData?.status.replace(/_/g, ' ')}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-400 mb-2">Quick Actions</p>
+                  <div className="flex flex-col gap-2">
+                    <button 
+                      onClick={() => handleStatusChange('assessment_complete')}
+                      className="w-full px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition"
+                    >
+                      Complete Assessment
+                    </button>
+                    <button 
+                      onClick={() => handleStatusChange('in_negotiation')}
+                      className="w-full px-3 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition"
+                    >
+                      Start Negotiation
+                    </button>
+                    <button 
+                      onClick={() => handleStatusChange('resolved')}
+                      className="w-full px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition"
+                    >
+                      Mark Resolved
+                    </button>
                   </div>
                 </div>
               </div>

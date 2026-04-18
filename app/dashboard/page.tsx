@@ -409,17 +409,26 @@ export default function Dashboard() {
                               View Details
                             </Link>
                             {['initial_contact'].includes(c.status) && (
-                              <button className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium">
+                              <button 
+                                onClick={() => window.location.href = `/cases/${c.id}?action=assess`}
+                                className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
+                              >
                                 Assess
                               </button>
                             )}
                             {['assessment_complete'].includes(c.status) && (
-                              <button className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium">
+                              <button 
+                                onClick={() => window.location.href = `/cases/${c.id}?action=negotiate`}
+                                className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
+                              >
                                 Negotiate
                               </button>
                             )}
                             {['in_negotiation'].includes(c.status) && (
-                              <button className="flex-1 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition text-sm font-medium">
+                              <button 
+                                onClick={() => window.location.href = `/cases/${c.id}?action=final_notice`}
+                                className="flex-1 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition text-sm font-medium"
+                              >
                                 Final Notice
                               </button>
                             )}
