@@ -1,11 +1,4 @@
-/**
- * Assessment Agent (Chat)
- * First contact: builds rapport, gathers information, assesses situation
- * Role: Understand borrower's circumstances, build empathy, assess ability to pay
- */
-
-import { BaseAgent, AgentConfig, AgentResponse } from '@/lib/base-agent'
-import { createBorrowerSummary } from '@/lib/utils-collections'
+import { Anthropic } from '@anthropic-ai/sdk';
 
 const ASSESSMENT_SYSTEM_PROMPT = `You are an empathetic debt collection representative working for a financial recovery agency. Your role is to:
 
@@ -25,93 +18,87 @@ DO NOT:
 
 Your goal is to understand the situation and prepare a complete briefing for the resolution agent who will discuss payment options.
 
-Keep your responses concise (under 200 tokens) and conversational. Ask one or two questions at a time.`
+Keep your responses concise (under 200 tokens) and conversational. Ask one or two questions at a time.`;
 
-export class AssessmentAgent extends BaseAgent {
-  private borrowerData: any
+export class AssessmentAgent {
+  private client: Anthropic;
+  private conversationId: string;
+  private borrowerData: any;
+  private messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
   constructor(conversationId: string, borrowerData: any) {
-    const config: AgentConfig = {
-      name: 'assessment',
-      systemPrompt: ASSESSMENT_SYSTEM_PROMPT,
-      maxTokens: 2000,
-      temperature: 0.7,
-      model: 'claude-3-5-sonnet-20241022',
-    }
-
-    super(config, conversationId)
-    this.borrowerData = borrowerData
-    this.initBudget()
+    this.conversationId = conversationId;
+    this.borrowerData = borrowerData;
+    this.client = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
   }
 
-  /**
-   * Run assessment interaction
-   */
-  async run(borrowerMessage: string): Promise<AgentResponse> {
-    // First message: start with greeting and situation explanation
-    if (this.messages.length === 0) {
-      const greeting = await this.sendGreeting()
-      this.addMessage('assistant', greeting)
+  async run(userMessage: string): Promise<{
+    message: string;
+    inputTokens: number;
+    outputTokens: number;
+  }> {
+    try {
+      console.log('[v0] Assessment Agent running for:', this.borrowerData.name);
+
+      // Add borrower context to first message
+      let contextualizedMessage = userMessage;
+      if (this.messages.length === 0) {
+        contextualizedMessage = `Borrower: ${this.borrowerData.name}, Phone: ${this.borrowerData.phone}, Debt Amount: $${this.borrowerData.debtAmount}, Age: ${this.borrowerData.debtAgeDays} days\n\n${userMessage}`;
+      }
+
+      // Add user message to history
+      this.messages.push({
+        role: 'user',
+        content: userMessage,
+      });
+
+      // Call Claude API
+      const response = await this.client.messages.create({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 1024,
+        system: ASSESSMENT_SYSTEM_PROMPT,
+        messages: this.messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+      });
+
+      const messageContent = response.content[0];
+      if (messageContent.type !== 'text') {
+        throw new Error('Unexpected response type from Claude');
+      }
+
+      const assistantMessage = messageContent.text;
+      this.messages.push({
+        role: 'assistant',
+        content: assistantMessage,
+      });
+
+      console.log('[v0] Assessment Agent response received');
+
       return {
-        message: greeting,
-        stopReason: 'assessment_greeting',
+        message: assistantMessage,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      };
+    } catch (error: any) {
+      console.error('[v0] Assessment Agent error:', error.message);
+      
+      // Return fallback response if API fails
+      const fallbackMessage = `Thank you for speaking with us about your account. I understand you have a debt of $${this.borrowerData.debtAmount} that's been outstanding for ${this.borrowerData.debtAgeDays} days. Could you help me understand your current financial situation? Are you currently employed and able to make payments toward this debt?`;
+      
+      this.messages.push({
+        role: 'assistant',
+        content: fallbackMessage,
+      });
+
+      return {
+        message: fallbackMessage,
         inputTokens: 0,
         outputTokens: 0,
-      }
-    }
-
-    // Subsequent messages: process response and ask follow-up
-    const response = await this.callClaude(borrowerMessage)
-
-    return response
-  }
-
-  /**
-   * Send initial greeting
-   */
-  private async sendGreeting(): Promise<string> {
-    const borrowerInfo = createBorrowerSummary(this.borrowerData)
-
-    const greetingPrompt = `You are beginning a call with a borrower. Here is their information:
-
-${borrowerInfo}
-
-Send a brief, professional greeting (2-3 sentences) that:
-1. Introduces you as a debt collection representative
-2. Acknowledges the debt
-3. Invites them to discuss their situation
-
-Keep it under 100 tokens.`
-
-    const response = await this.client.messages.create({
-      model: this.config.model,
-      max_tokens: 300,
-      system: this.config.systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: greetingPrompt,
-        },
-      ],
-    })
-
-    return (response.content[0] as any).text
-  }
-
-  /**
-   * Assessment agents should track key insights
-   */
-  async getInsights(): Promise<any> {
-    const transcript = this.messages
-      .map((m) => `${m.role}: ${m.content}`)
-      .join('\n')
-
-    // Extract insights about borrower
-    return {
-      totalMessages: this.messages.length,
-      tone: 'neutral', // Could be improved with sentiment analysis
-      keyPoints: [], // Would extract from transcript
-      readyForResolution: this.messages.length > 3, // Simple heuristic
+      };
     }
   }
 }
