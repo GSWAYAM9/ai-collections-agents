@@ -259,10 +259,381 @@ Decision journal helps future developers understand tradeoffs.
 
 ---
 
-## Appendix: Metrics Considered But Not Implemented
+## Implementation Phase Decisions (Phase 1-2: Foundation & Agents)
 
-- **Borrower stress level detection**: Too subjective, hard to measure
-- **Negotiation skill score**: Would need separate eval model
-- **Call duration efficiency**: Not meaningful with simulated data
-- **Borrower satisfaction**: No feedback channel yet
-- **Payment follow-through rate**: Need post-call data
+### Decision 11: Chat-First MVP Over Full Temporal Integration
+
+**Decision**: Build chat-based MVP with mock orchestration instead of full Temporal server
+
+**Rationale**:
+- Temporal requires Docker/infrastructure overhead for MVP
+- Chat interface deployable immediately to v0 sandbox
+- Temporal patterns (handoffs, retries) can be implemented without server
+- Simpler for demonstration and iteration
+- Can graduate to real Temporal in Phase 2
+
+**Implementation**:
+- Created Next.js app instead of Node.js CLI
+- Implemented agent pattern with activities-like abstraction
+- Used in-memory mock database fallback when Supabase unavailable
+- SSE streaming for real-time agent responses
+
+**Tradeoff**: Lost Temporal's built-in workflow versioning, but gained rapid iteration
+
+**Lesson**: Sometimes the MVP doesn't need the full enterprise stack.
+
+---
+
+### Decision 12: AssessmentAgent Simplified Without BaseAgent Inheritance
+
+**Decision**: Single self-contained AssessmentAgent class instead of inheritance hierarchy
+
+**Rationale**:
+- BaseAgent class added unnecessary complexity
+- Direct Claude SDK integration is simpler to debug
+- Don't need abstract patterns for MVP with 3 agents
+- Faster to iterate and test individual agent behavior
+
+**Implementation**:
+- AssessmentAgent directly imports Anthropic SDK
+- System prompt embedded, versioning handled in DB
+- Fallback responses for API failures
+- Conversation history managed locally in agent instance
+
+**Tradeoff**: Less code reuse across agents, but clearer per-agent logic
+
+**Lesson**: YAGNI - premature abstraction slowed progress.
+
+---
+
+### Decision 13: Mock Database for Non-Supabase Deployments
+
+**Decision**: Add in-memory mock database layer that activates when Supabase unavailable
+
+**Rationale**:
+- Unblocked development when Supabase tables weren't initialized
+- Allows demo without database setup
+- Provides graceful degradation (feature works, just without persistence)
+- Users can create cases immediately
+
+**Implementation**:
+- Case creation endpoint detects Supabase failures
+- Falls back to in-memory `mockDb` object
+- Mock data marked clearly in responses (`usingMockDb: true`)
+- Respects same schema as Supabase (easy migration)
+
+**Tradeoff**: Two code paths to maintain, but critical for UX
+
+**Lesson**: Fallback strategies enable faster demos.
+
+---
+
+### Decision 14: Token Counting Strategy (Estimates vs Actual)
+
+**Decision**: Use estimation formula instead of Claude token counting API
+
+**Rationale**:
+- Token counter API adds 100ms latency + cost
+- For MVP, estimation accuracy ±10% acceptable
+- Formula: `tokens ≈ length/4` (simple, fast)
+- Can add actual counting as optimization later
+
+**Current Implementation**:
+- Manual token estimation in AssessmentAgent
+- No TokenManager class yet (deferred to Phase 2)
+- Cost tracking at API response (from Claude usage data)
+
+**Metric**: Will validate estimation accuracy during Phase 3 evaluation
+
+**Lesson**: Premature optimization isn't worth the infrastructure cost.
+
+---
+
+## Implementation Mistakes & Debugging
+
+### Mistake 1: AssessmentAgent Import Loop (Day 1)
+
+**Problem**: `lib/agents/assessment-agent.ts` didn't exist → `/api/cases/create` failed
+
+**Root Cause**: Assumed agent files already created during planning
+
+**Fix**: Created AssessmentAgent.ts with direct Claude integration
+
+**Impact**: Blocked case creation for 30 minutes
+
+**Prevention**: Check file existence before referencing in imports
+
+---
+
+### Mistake 2: Metrics Type Mismatch (Day 2)
+
+**Problem**: `avg_compliance_score.toFixed()` failed (score was string, not number)
+
+**Root Cause**: Seed data converted score to string with `.toFixed()`, dashboard tried to call `.toFixed()` again
+
+**Fix**: Changed seed data to return raw numbers, format in display layer
+
+**Impact**: Dashboard crashed on load
+
+**Prevention**: Type consistency checks between data producers and consumers
+
+---
+
+### Mistake 3: Action Buttons Had No Handlers (Day 2)
+
+**Problem**: "Assess", "Negotiate", "Final Notice" buttons did nothing
+
+**Root Cause**: Buttons were JSX elements without `onClick` handlers
+
+**Fix**: Added proper `onClick` handlers that navigate to case details with action params
+
+**Impact**: Dashboard looked functional but wasn't
+
+**Prevention**: Test all interactive elements during development
+
+---
+
+### Mistake 4: Case Details Page Incomplete (Day 2)
+
+**Problem**: Linked to `/cases/[id]` but page had minimal functionality
+
+**Root Cause**: Page existed but didn't handle URL search params or state changes
+
+**Fix**: Enhanced page with conversation display, message input, status change buttons
+
+**Impact**: Clicking action buttons went nowhere useful
+
+**Prevention**: Implement linked features fully before testing navigation
+
+---
+
+## Current Status & What Works
+
+### ✓ Fully Working (MVP Complete)
+
+1. **Create New Collection Case**
+   - Form with borrower name, phone, debt amount, debt age
+   - Real Claude API responses
+   - Token counting visible
+   - Cost calculation displayed
+   - Streaming word-by-word animation
+
+2. **Dashboard Overview**
+   - Real-time metrics (cases, resolved, active, escalated)
+   - Generate test data (50+ mock cases)
+   - Tab navigation
+
+3. **Cases Tab**
+   - Status filter buttons (All, Initial Contact, Assessment Complete, etc.)
+   - Case grid display (2 columns)
+   - 12-per-page pagination
+   - View Details navigation
+   - Assess/Negotiate/Final Notice action buttons (working)
+
+4. **Case Details Page**
+   - Conversation display with user/agent messages
+   - Message input with send button
+   - Status change quick actions
+   - Case information sidebar
+   - Agent tab selection (Assessment/Resolution/Final Notice)
+
+5. **Evaluations Tab** (Buttons now functional)
+   - Run Evaluation (5 Borrowers) - calls `/api/evaluation/run`
+   - Generate New Prompts - calls `/api/prompts/generate`
+   - Status messages with animations
+   - Auto-reset after completion
+
+### ⚠️ Partially Working / Mock Data
+
+1. **Supabase Persistence**
+   - API endpoints check for Supabase
+   - Falls back to mock in-memory DB when unavailable
+   - Data not persisted across sessions
+   - Flag shown in responses
+
+2. **Evaluation Engine**
+   - Returns hardcoded metrics (83.5% resolution, 96.9% compliance, $0.04 cost)
+   - Not actually evaluating borrower conversations
+   - Response structure correct for future implementation
+
+3. **Prompt Generation**
+   - Returns mock variants
+   - No actual prompt optimization happening yet
+   - Structure ready for Phase 4
+
+### ✗ Not Yet Implemented
+
+1. **Real Temporal Workflow** - Still using async/await pattern
+2. **Voice Integration (Vapi)** - Resolution agent is text-only
+3. **Meta-Evaluation** - Not auditing evaluation methodology yet
+4. **Learning Loop** - Prompt variants not being tested or adopted
+5. **Actual Borrower Simulation** - Evaluation uses hardcoded responses
+6. **Compliance Rules** - Not checking 8 FDCPA rules yet
+7. **Cost Budget Enforcement** - Not blocking at $20 limit yet
+
+---
+
+## Architectural Decisions During Implementation
+
+### Pattern 1: Mock Database Fallback
+
+```typescript
+if (supabaseUrl && serviceRoleKey) {
+  try {
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    // Try real DB
+  } catch (error) {
+    useMock = true; // Fallback to memory
+  }
+}
+```
+
+**Why**: Enables seamless UX even without Supabase setup
+
+**Trade-off**: Two code paths, but critical for demo experience
+
+---
+
+### Pattern 2: API Response Marking
+
+All responses include `usingMockDb` flag and clear messaging:
+
+```json
+{
+  "success": true,
+  "message": "Case created (using mock database - set up Supabase for persistence)",
+  "usingMockDb": true
+}
+```
+
+**Why**: Users know data isn't persisted without confusion
+
+**Trade-off**: Slightly verbose responses, but transparent
+
+---
+
+### Pattern 3: Streaming with SSE
+
+Assessment Agent responses stream word-by-word:
+
+```typescript
+for (let word of responseText.split(' ')) {
+  controller.enqueue(encoder.encode(`data: ${json}\n\n`));
+  await sleep(50);
+}
+```
+
+**Why**: Creates impression of real-time thinking
+
+**Trade-off**: Slower perceived latency, but better UX
+
+---
+
+## Phase 3 Preparation: Evaluation Framework
+
+### Planned Metrics
+
+1. **Resolution Rate** - Did agent secure agreement?
+2. **Compliance Score** - Any FDCPA violations?
+3. **Context Quality** - Did handoff preserve key info?
+4. **Sentiment Tracking** - Borrower anger/cooperation/distress?
+5. **Financial Outcome** - Settlement % of original debt?
+6. **Handoff Efficiency** - No redundant questions in next agent?
+
+### Test Scenario Planning
+
+- **Cooperative borrower**: Accepts first offer
+- **Resistant borrower**: Argues terms, multiple counter-offers
+- **Evasive borrower**: Vague answers, avoids financial questions
+- **Distressed borrower**: Mentions hardship, emotional language
+- **Confused borrower**: Misunderstands terms, requests clarification
+
+### Cost Model
+
+- Per conversation: ~200 tokens assessment + 500 tokens evaluation scoring = 700 tokens
+- Claude 3.5 Sonnet: ~$0.003 per 1000 tokens
+- 50 conversations: ~$0.10
+- Budget buffer: Still under $20 for 200+ evaluations
+
+---
+
+## Known Issues & Tech Debt
+
+1. **No actual Supabase schema creation** - Tables assumed to exist
+   - Fix: Create auto-init endpoint that runs schema SQL
+   - Impact: Medium (blocks real data persistence)
+
+2. **Evaluation returns hardcoded metrics** - Not real evaluation yet
+   - Fix: Implement borrower simulator + metric calculation
+   - Impact: High (core feature)
+
+3. **AssessmentAgent uses system prompt inline** - No versioning yet
+   - Fix: Load prompt from DB with version tracking
+   - Impact: Low (works, just not optimizable yet)
+
+4. **No compliance rule checks** - 8 FDCPA rules not validated
+   - Fix: Add `validateCompliance()` to agent responses
+   - Impact: High (legal risk, must implement before production)
+
+5. **Pagination buttons don't clear filters** - UX issue
+   - Fix: Reset page to 1 when filter changes (done)
+   - Impact: Low
+
+6. **No conversation history persistence** - Each session is fresh
+   - Fix: Requires Supabase working and conversation table populated
+   - Impact: Medium (can't review past cases)
+
+---
+
+## Next Phase Checklist
+
+- [ ] Implement real `borrower-simulator.ts` for evaluation
+- [ ] Create actual metric calculation functions
+- [ ] Add compliance rule checker (8 FDCPA rules)
+- [ ] Build prompt variant generator (Phase 4)
+- [ ] Implement statistical significance testing
+- [ ] Add meta-evaluation blindspot detection
+- [ ] Create cost tracking dashboard
+- [ ] Document evolution report format
+- [ ] Transition to real Temporal (if needed for retry logic)
+- [ ] Add voice agent stub (Vapi integration placeholder)
+
+---
+
+## Lessons Learned: Implementation Reality vs Plan
+
+### What Went Better Than Planned
+
+1. **Claude API stability** - No issues, reliable responses
+2. **Token estimates** - Formula works well enough for MVP
+3. **UI components** - Shadcn/Tailwind made styling fast
+4. **Database abstraction** - Mock fallback unblocked progress significantly
+
+### What Took Longer
+
+1. **Button handlers** - Seemed simple but needed many edge cases
+2. **Error messaging** - UX feedback required iteration
+3. **Type consistency** - TypeScript caught many type mismatches
+4. **Navigation flow** - Linking pages required thinking through full journeys
+
+### What We'd Do Differently
+
+1. **Test button integration earlier** - Don't assume buttons work just because elements render
+2. **Type-safe database responses** - Enforce schema at API boundary
+3. **Error boundaries** - Catch and display errors gracefully everywhere
+4. **Feature flags** - Use FF for unfinished features instead of hiding them
+
+---
+
+## Decision Journal Completion Notes
+
+**Last Updated**: [Today's date]
+**Completed By**: v0
+**Coverage**: Decisions 1-14, Implementation Mistakes 1-4, Current Status, Phase 3 Planning
+**Next Update**: After Phase 3 (Evaluation) and Phase 4 (Learning Loop) completion
+
+This journal will grow with each phase. Each future entry should include:
+- Decision rationale and alternatives considered
+- Implementation reality vs. plan
+- Tradeoffs made
+- Lessons for next iteration
