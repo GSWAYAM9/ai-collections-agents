@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VAPI_API_KEY=${VAPI_API_KEY}
+    depends_on:
+      - postgres
+    networks:
+      - collections-network
+
+  # PostgreSQL Database (for local development)
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=collections
+      - POSTGRES_PASSWORD=collections_dev_password
+      - POSTGRES_DB=collections_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/001_schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
+    networks:
+      - collections-network
+
+volumes:
+  postgres_data:
+
+networks:
+  collections-network:
+    driver: bridge
