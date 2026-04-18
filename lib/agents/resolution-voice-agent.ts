@@ -81,12 +81,11 @@ export class ResolutionVoiceAgent {
         throw new Error('VAPI_PHONE_NUMBER_ID not provided');
       }
 
-      const payload = {
+      const payload: any = {
         phoneNumberId: this.vapiPhoneNumberId,
         customer: {
           number: this.borrowerData.phone.startsWith('+') ? this.borrowerData.phone : `+1${this.borrowerData.phone}`,
         },
-        assistantId: process.env.VAPI_ASSISTANT_ID || '550e8400-e29b-41d4-a716-446655440000',
         assistantOverrides: {
           model: {
             provider: 'anthropic',
@@ -115,6 +114,11 @@ export class ResolutionVoiceAgent {
           debtAgeDays: this.borrowerData.debtAgeDays,
         },
       };
+
+      // Only add assistantId if explicitly configured
+      if (process.env.VAPI_ASSISTANT_ID) {
+        payload.assistantId = process.env.VAPI_ASSISTANT_ID;
+      }
 
       console.log('[v0] Vapi payload prepared:', JSON.stringify(payload, null, 2));
 
