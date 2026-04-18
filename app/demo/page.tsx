@@ -48,8 +48,8 @@ export default function DemoPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: '+919876543210',
-          borrowerName: 'Rajesh Kumar',
+          phoneNumber: '+1-555-0123',
+          borrowerName: 'John Doe',
         }),
       });
 

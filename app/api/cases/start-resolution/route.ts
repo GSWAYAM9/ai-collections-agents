@@ -37,22 +37,30 @@ export async function POST(req: NextRequest) {
     // Ensure phone number has + prefix
     const formattedPhone = borrowerPhone.startsWith('+') ? borrowerPhone : `+1${borrowerPhone}`;
 
-    const vapiPayload = {
-      assistantId: process.env.VAPI_ASSISTANT_ID || '550e8400-e29b-41d4-a716-446655440000', // Default UUID if not set
+    // Build payload - assistantId is optional, only include if set
+    const vapiPayload: any = {
       phoneNumberId: vapiPhoneNumberId,
       customer: {
         number: formattedPhone,
       },
-      assistantOverrides: {
-        model: {
-          provider: 'anthropic',
-          model: 'claude-3-5-sonnet-20241022',
-          temperature: 0.7,
-          messages: [
-            {
-              role: 'system',
-              content: `You are the Resolution Agent for a debt collections company. Your goal is to negotiate payment terms with the borrower.
-              
+    };
+
+    // Only add assistantId if explicitly configured
+    if (process.env.VAPI_ASSISTANT_ID) {
+      vapiPayload.assistantId = process.env.VAPI_ASSISTANT_ID;
+    }
+
+    // Add assistant overrides
+    vapiPayload.assistantOverrides = {
+      model: {
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet-20241022',
+        temperature: 0.7,
+        messages: [
+          {
+            role: 'system',
+            content: `You are the Resolution Agent for a debt collections company. Your goal is to negotiate payment terms with the borrower.
+            
 Key objectives:
 1. Confirm the debt amount and borrower identity
 2. Understand their financial situation
@@ -69,15 +77,14 @@ Important compliance rules:
 
 Borrower Name: ${borrowerName}
 Debt Case ID: ${caseId}`,
-            },
-          ],
-        },
-        voice: {
-          provider: '11labs',
-          voiceId: 'paula',
-        },
-        firstMessage: `Hi ${borrowerName}, this is a follow-up regarding your debt account. Do you have a few minutes to discuss a payment arrangement that works for your situation?`,
+          },
+        ],
       },
+      voice: {
+        provider: '11labs',
+        voiceId: 'paula',
+      },
+      firstMessage: `Hi ${borrowerName}, this is a follow-up regarding your debt account. Do you have a few minutes to discuss a payment arrangement that works for your situation?`,
     };
 
     console.log('[v0] Calling Vapi API...');

@@ -6,7 +6,7 @@ import Link from 'next/link';
 export default function CreateCasePage() {
   const [formData, setFormData] = useState({
     borrowerName: '',
-    phoneNumber: '+91',
+    phoneNumber: '+1-',
     debtAmount: '',
     debtAgeDays: '90',
   });
