@@ -4,7 +4,7 @@ import { ResolutionVoiceAgent } from '@/lib/agents/resolution-voice-agent';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { caseId, borrowerData, phoneNumberId } = body;
+    const { caseId, borrowerData } = body;
 
     if (!caseId || !borrowerData || !borrowerData.phone) {
       return NextResponse.json(
@@ -13,11 +13,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
     if (!phoneNumberId) {
       return NextResponse.json(
         {
-          error: 'Missing Vapi phoneNumberId. Configure in settings.',
-          hint: 'Get a phone number from Vapi dashboard and set VAPI_PHONE_NUMBER_ID',
+          error: 'Vapi phoneNumberId not configured',
+          hint: 'Set VAPI_PHONE_NUMBER_ID environment variable',
         },
         { status: 400 }
       );

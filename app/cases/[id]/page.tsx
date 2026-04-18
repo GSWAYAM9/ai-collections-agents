@@ -128,7 +128,6 @@ export default function CaseDetailsPage() {
             debtAmount: caseData?.debt_amount,
             debtAgeDays: caseData?.debt_age,
           },
-          phoneNumberId: process.env.NEXT_PUBLIC_VAPI_PHONE_NUMBER_ID,
         }),
       });
 
