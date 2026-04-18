@@ -7,6 +7,8 @@ export default function AdminDashboard() {
   const [message, setMessage] = useState('');
   const [schemaSQL, setSchemaSQL] = useState<string[]>([]);
   const [showSQL, setShowSQL] = useState(false);
+  const [autoInitLoading, setAutoInitLoading] = useState(false);
+  const [autoInitStatus, setAutoInitStatus] = useState('');
 
   const initializeDatabase = async () => {
     setStatus('loading');
@@ -43,6 +45,29 @@ export default function AdminDashboard() {
     alert('All SQL copied to clipboard!');
   };
 
+  const autoInitializeDatabase = async () => {
+    setAutoInitLoading(true);
+    setAutoInitStatus('Initializing database tables...');
+
+    try {
+      const response = await fetch('/api/admin/auto-init-db', {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setAutoInitStatus('✓ Database initialized successfully! You can now create cases.');
+      } else {
+        setAutoInitStatus(`✗ Error: ${data.error || 'Failed to initialize'}`);
+      }
+    } catch (error: any) {
+      setAutoInitStatus(`✗ Error: ${error.message}`);
+    } finally {
+      setAutoInitLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-8">
       <div className="max-w-4xl mx-auto">
@@ -55,17 +80,46 @@ export default function AdminDashboard() {
             <div className="border border-slate-700 rounded-lg p-6 bg-slate-900/50">
               <h2 className="text-xl font-semibold text-white mb-4">Database Setup</h2>
               
-              <button
-                onClick={initializeDatabase}
-                disabled={status === 'loading'}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                  status === 'loading'
-                    ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
-                }`}
-              >
-                {status === 'loading' ? 'Fetching...' : 'Get Database Schema'}
-              </button>
+              <div className="space-y-3 mb-6">
+                <div>
+                  <p className="text-sm text-slate-300 mb-2">Option 1: Auto-Initialize (Recommended)</p>
+                  <button
+                    onClick={autoInitializeDatabase}
+                    disabled={autoInitLoading}
+                    className={`w-full px-6 py-3 rounded-lg font-medium transition-all ${
+                      autoInitLoading
+                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                        : 'bg-green-600 hover:bg-green-700 text-white cursor-pointer'
+                    }`}
+                  >
+                    {autoInitLoading ? 'Initializing...' : '✓ Auto-Initialize Database'}
+                  </button>
+                  {autoInitStatus && (
+                    <div className={`mt-2 p-3 rounded-lg text-sm ${
+                      autoInitStatus.includes('✓')
+                        ? 'bg-green-900/30 border border-green-700 text-green-200'
+                        : 'bg-red-900/30 border border-red-700 text-red-200'
+                    }`}>
+                      {autoInitStatus}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-slate-700 pt-4">
+                  <p className="text-sm text-slate-300 mb-2">Option 2: Manual Setup</p>
+                  <button
+                    onClick={initializeDatabase}
+                    disabled={status === 'loading'}
+                    className={`w-full px-6 py-3 rounded-lg font-medium transition-all ${
+                      status === 'loading'
+                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                    }`}
+                  >
+                    {status === 'loading' ? 'Fetching...' : 'Get Database Schema'}
+                  </button>
+                </div>
+              </div>
 
               {message && (
                 <div className={`mt-4 p-4 rounded-lg ${
