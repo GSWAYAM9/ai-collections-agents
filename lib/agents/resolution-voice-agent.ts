@@ -69,9 +69,19 @@ export class ResolutionVoiceAgent {
     message: string;
   }> {
     try {
+      console.log('[v0] Vapi API Key available:', !!this.apiKey);
+      console.log('[v0] Phone Number ID:', this.vapiPhoneNumberId);
       console.log('[v0] Initiating Vapi voice call to:', this.borrowerData.phone);
 
-      const response = await this.vapiClient.post('/call', {
+      if (!this.apiKey) {
+        throw new Error('VAPI_API_KEY environment variable not set');
+      }
+
+      if (!this.vapiPhoneNumberId) {
+        throw new Error('VAPI_PHONE_NUMBER_ID not provided');
+      }
+
+      const payload = {
         phoneNumberId: this.vapiPhoneNumberId,
         customerNumber: this.borrowerData.phone,
         assistantId: 'resolution-agent',
@@ -92,7 +102,7 @@ export class ResolutionVoiceAgent {
             voiceId: 'paula',
           },
           firstMessage: this.getInitialGreeting(),
-          maxDurationSeconds: 600, // 10 minute max call
+          maxDurationSeconds: 600,
           endCallMessage: 'Thank you for working with us. We appreciate your cooperation.',
           endCallPhrase: 'bye',
         },
@@ -100,9 +110,15 @@ export class ResolutionVoiceAgent {
           borrowerId: this.borrowerData.id,
           caseId: this.conversationId,
           debtAmount: this.borrowerData.debtAmount,
-          debtAge: this.borrowerData.debtAgeDays,
+          debtAgeDays: this.borrowerData.debtAgeDays,
         },
-      });
+      };
+
+      console.log('[v0] Vapi payload prepared:', JSON.stringify(payload, null, 2));
+
+      const response = await this.vapiClient.post('/call', payload);
+
+      console.log('[v0] Vapi API response:', response.status, response.data);
 
       this.callData = {
         id: response.data.id,
@@ -119,8 +135,13 @@ export class ResolutionVoiceAgent {
         message: `Call initiated to ${this.borrowerData.phone}`,
       };
     } catch (error: any) {
-      console.error('[v0] Vapi call initiation error:', error.message);
-      throw new Error(`Failed to initiate call: ${error.message}`);
+      console.error('[v0] Vapi call initiation error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        config: error.config?.url,
+      });
+      throw new Error(`Failed to initiate call: ${error.message}${error.response?.data ? ' - ' + JSON.stringify(error.response.data) : ''}`);
     }
   }
 
