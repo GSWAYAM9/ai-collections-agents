@@ -82,11 +82,12 @@ Generate a helpful, empathetic response that moves the conversation forward whil
     }
 
     const agentResponse = messageContent.text;
-    const { input_tokens, output_tokens } = response.usage;
+    const inputTokens = response.usage.input_tokens;
+    const outputTokens = response.usage.output_tokens;
     
     // Calculate cost (Claude 3.5 Sonnet pricing)
-    const inputCost = (input_tokens * 3) / 1000000; // $3 per million input tokens
-    const outputCost = (output_tokens * 15) / 1000000; // $15 per million output tokens
+    const inputCost = (inputTokens * 3) / 1000000; // $3 per million input tokens
+    const outputCost = (outputTokens * 15) / 1000000; // $15 per million output tokens
     const totalCost = inputCost + outputCost;
 
     console.log('[v0] Anthropic test response:', {
