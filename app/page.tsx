@@ -9,6 +9,12 @@ export default function HomePage() {
           <h1 className="text-2xl font-bold text-white">Collections AI</h1>
           <div className="space-x-4">
             <Link
+              href="/demo"
+              className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition text-sm"
+            >
+              API Demo
+            </Link>
+            <Link
               href="/dashboard"
               className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm"
             >
@@ -36,7 +42,18 @@ export default function HomePage() {
         </div>
 
         {/* CTA */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <Link
+            href="/demo"
+            className="block p-8 rounded-lg bg-purple-600/10 border border-purple-500/50 hover:border-purple-500 hover:bg-purple-600/20 transition"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <span className="text-3xl">⚡</span>
+              <h3 className="text-xl font-bold text-white">API Demo</h3>
+            </div>
+            <p className="text-slate-300 text-sm">Test Anthropic Claude and Vapi voice APIs in action</p>
+          </Link>
+
           <Link
             href="/dashboard"
             className="block p-8 rounded-lg bg-blue-600/10 border border-blue-500/50 hover:border-blue-500 hover:bg-blue-600/20 transition"
