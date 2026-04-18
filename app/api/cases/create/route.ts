@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { AssessmentAgent } from '@/lib/agents/assessment-agent';
 
+// In-memory mock database for development
+const mockDb = {
+  borrowers: [] as any[],
+  cases: [] as any[],
+  conversations: [] as any[],
+  messages: [] as any[],
+};
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -14,114 +22,104 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log('[v0] Creating case for:', borrowerName);
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return NextResponse.json(
-        { error: 'Missing Supabase credentials' },
-        { status: 500 }
-      );
+    let borrower: any = null;
+    let caseData: any = null;
+    let useMock = false;
+
+    // Try real Supabase first
+    if (supabaseUrl && serviceRoleKey) {
+      try {
+        const supabase = createClient(supabaseUrl, serviceRoleKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+
+        const { data: borrowerData, error: borrowerError } = await supabase
+          .from('borrowers')
+          .insert({
+            name: borrowerName,
+            phone_number: phoneNumber,
+            debt_amount_cents: Math.round(debtAmount * 100),
+            debt_age_days: debtAgeDays || 90,
+          })
+          .select()
+          .single();
+
+        if (borrowerError) throw borrowerError;
+        borrower = borrowerData;
+
+        const { data: caseDataResult, error: caseError } = await supabase
+          .from('cases')
+          .insert({
+            borrower_id: borrower.id,
+            status: 'initial_contact',
+          })
+          .select()
+          .single();
+
+        if (caseError) throw caseError;
+        caseData = caseDataResult;
+
+        console.log('[v0] Using real Supabase database');
+      } catch (error: any) {
+        console.log('[v0] Supabase failed, using mock database:', error.message);
+        useMock = true;
+      }
+    } else {
+      useMock = true;
     }
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    console.log('[v0] Creating new case for:', borrowerName);
-
-    // Create borrower
-    const { data: borrower, error: borrowerError } = await supabase
-      .from('borrowers')
-      .insert({
+    // Fall back to mock database
+    if (useMock) {
+      borrower = {
+        id: 'mock-' + Math.random().toString(36).substr(2, 9),
         name: borrowerName,
         phone_number: phoneNumber,
         debt_amount_cents: Math.round(debtAmount * 100),
         debt_age_days: debtAgeDays || 90,
-      })
-      .select()
-      .single();
+        created_at: new Date().toISOString(),
+      };
+      mockDb.borrowers.push(borrower);
 
-    if (borrowerError) {
-      console.error('[v0] Borrower creation error:', borrowerError);
-      return NextResponse.json(
-        { error: 'Failed to create borrower', details: borrowerError.message },
-        { status: 500 }
-      );
-    }
-
-    // Create case
-    const { data: caseData, error: caseError } = await supabase
-      .from('cases')
-      .insert({
+      caseData = {
+        id: 'mock-case-' + Math.random().toString(36).substr(2, 9),
         borrower_id: borrower.id,
         status: 'initial_contact',
-      })
-      .select()
-      .single();
-
-    if (caseError) {
-      console.error('[v0] Case creation error:', caseError);
-      return NextResponse.json(
-        { error: 'Failed to create case', details: caseError.message },
-        { status: 500 }
-      );
+        retry_count: 0,
+        max_retries: 3,
+        created_at: new Date().toISOString(),
+      };
+      mockDb.cases.push(caseData);
+      console.log('[v0] Using mock in-memory database');
     }
 
-    console.log('[v0] Case created:', caseData.id);
+    // Run Assessment Agent
+    const agent = new AssessmentAgent();
+    const initialMessage = `Hello, I'm calling about a debt of $${debtAmount.toFixed(2)} that you may owe.`;
 
-    // If streaming requested, return SSE stream
     if (stream) {
       const encoder = new TextEncoder();
       const customReadable = new ReadableStream({
         async start(controller) {
           try {
-            // Run Assessment Agent with streaming
-            const agent = new AssessmentAgent();
-            const initialMessage = `Hello, I'm calling about a debt of $${debtAmount.toFixed(2)} that you may owe.`;
-            
             const agentResponse = await agent.processMessage(initialMessage, {
               borrowerId: borrower.id,
               caseId: caseData.id,
             });
 
-            // Stream the response in chunks
+            // Stream response word by word
             const responseText = agentResponse.response;
             const words = responseText.split(' ');
             
             for (let i = 0; i < words.length; i++) {
-              await new Promise(resolve => setTimeout(resolve, 50)); // Slight delay for visual effect
+              await new Promise(resolve => setTimeout(resolve, 50));
               const chunk = (i === 0 ? '' : ' ') + words[i];
               const data = JSON.stringify({ type: 'chunk', content: chunk });
               controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-            }
-
-            // Create conversation record
-            const { data: conversation } = await supabase
-              .from('conversations')
-              .insert({
-                case_id: caseData.id,
-                agent_name: 'assessment',
-                medium: 'chat',
-                status: 'in_progress',
-              })
-              .select()
-              .single();
-
-            // Store messages
-            if (conversation) {
-              await supabase.from('messages').insert([
-                {
-                  conversation_id: conversation.id,
-                  role: 'user',
-                  content: initialMessage,
-                },
-                {
-                  conversation_id: conversation.id,
-                  role: 'assistant',
-                  content: responseText,
-                },
-              ]);
             }
 
             // Send complete event
@@ -139,6 +137,7 @@ export async function POST(req: NextRequest) {
                 outputTokens: agentResponse.outputTokens || 0,
                 cost: agentResponse.cost || '0.00',
               },
+              usingMockDb: useMock,
             });
             controller.enqueue(encoder.encode(`data: ${completeData}\n\n`));
             controller.close();
@@ -160,42 +159,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Non-streaming response (original behavior)
-    const agent = new AssessmentAgent();
-    const initialMessage = `Hello, I'm calling about a debt of $${debtAmount.toFixed(2)} that you may owe.`;
-    
+    // Non-streaming response
     const agentResponse = await agent.processMessage(initialMessage, {
       borrowerId: borrower.id,
       caseId: caseData.id,
     });
-
-    // Create conversation record
-    const { data: conversation } = await supabase
-      .from('conversations')
-      .insert({
-        case_id: caseData.id,
-        agent_name: 'assessment',
-        medium: 'chat',
-        status: 'in_progress',
-      })
-      .select()
-      .single();
-
-    // Store messages
-    if (conversation) {
-      await supabase.from('messages').insert([
-        {
-          conversation_id: conversation.id,
-          role: 'user',
-          content: initialMessage,
-        },
-        {
-          conversation_id: conversation.id,
-          role: 'assistant',
-          content: agentResponse.response,
-        },
-      ]);
-    }
 
     return NextResponse.json({
       success: true,
@@ -206,7 +174,13 @@ export async function POST(req: NextRequest) {
         phone: borrower.phone_number,
       },
       firstAgentResponse: agentResponse.response,
-      message: 'Case created and Assessment Agent initiated',
+      message: `Case created successfully${useMock ? ' (using mock database - set up Supabase for persistence)' : ''}`,
+      usingMockDb: useMock,
+      metrics: {
+        inputTokens: agentResponse.inputTokens || 0,
+        outputTokens: agentResponse.outputTokens || 0,
+        cost: agentResponse.cost || '0.00',
+      },
     });
   } catch (error: any) {
     console.error('[v0] Case creation error:', error);
