@@ -206,7 +206,7 @@ export async function POST() {
     return NextResponse.json({ 
       success: true,
       message: 'Database schema initialization initiated. Please run the SQL in Supabase dashboard at: SQL Editor > New Query',
-      schemaStatements: createTableStatements.join(';\n\n') + ';'
+      schemaStatements: createTableStatements
     });
   } catch (error: any) {
     console.error('[v0] Error:', error.message);
@@ -214,7 +214,7 @@ export async function POST() {
       { 
         error: 'Database initialization requires manual setup',
         details: 'Please run the provided SQL statements in Supabase dashboard',
-        statements: createTableStatements
+        schemaStatements: createTableStatements
       },
       { status: 500 }
     );
