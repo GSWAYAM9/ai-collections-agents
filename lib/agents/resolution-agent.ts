@@ -56,7 +56,7 @@ export class ResolutionAgent extends BaseAgent {
       systemPrompt: RESOLUTION_SYSTEM_PROMPT,
       maxTokens: 2000,
       temperature: 0.6, // Slightly lower temperature for negotiation
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20250514',
     }
 
     super(config, conversationId)

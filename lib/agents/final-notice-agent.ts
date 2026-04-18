@@ -43,7 +43,7 @@ export class FinalNoticeAgent extends BaseAgent {
       systemPrompt: FINAL_NOTICE_SYSTEM_PROMPT,
       maxTokens: 2000,
       temperature: 0.5, // Lower temperature for formal communication
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20250514',
     }
 
     super(config, conversationId)

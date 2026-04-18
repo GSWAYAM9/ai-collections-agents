@@ -5,7 +5,7 @@
 export const config = {
   // Anthropic
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
-  anthropicModel: 'claude-3-5-sonnet-20241022', // or latest available
+  anthropicModel: 'claude-3-5-sonnet-20250514', // Latest Sonnet model
 
   // Vapi (Voice provider)
   vapiApiKey: process.env.VAPI_API_KEY || '',

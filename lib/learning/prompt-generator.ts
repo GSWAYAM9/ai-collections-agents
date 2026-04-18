@@ -58,7 +58,7 @@ Generate an improved version of this prompt that:
 Output ONLY the new prompt text, no explanation.`
 
     const response = await this.client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20250514',
       max_tokens: 1000,
       messages: [
         {
