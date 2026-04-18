@@ -19,7 +19,7 @@ export default function AdminDashboard() {
 
       const data = await response.json();
 
-      if (data.schemaStatements) {
+      if (data.schemaStatements && Array.isArray(data.schemaStatements)) {
         setSchemaSQL(data.schemaStatements);
         setShowSQL(true);
         setStatus('info');
@@ -97,25 +97,29 @@ export default function AdminDashboard() {
 
                 <div className="max-h-96 overflow-y-auto bg-slate-950 rounded-lg p-4 mb-4">
                   <div className="space-y-4">
-                    {schemaSQL.map((statement, idx) => (
-                      <div key={idx} className="border-b border-slate-700 pb-4 last:border-b-0">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-slate-400 text-xs font-mono">Statement {idx + 1}</span>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(statement);
-                              alert('Copied!');
-                            }}
-                            className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-slate-200"
-                          >
-                            Copy
-                          </button>
+                    {Array.isArray(schemaSQL) && schemaSQL.length > 0 ? (
+                      schemaSQL.map((statement, idx) => (
+                        <div key={idx} className="border-b border-slate-700 pb-4 last:border-b-0">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-slate-400 text-xs font-mono">Statement {idx + 1}</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(statement);
+                                alert('Copied!');
+                              }}
+                              className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-slate-200"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                          <pre className="text-xs text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap break-words">
+                            {statement}
+                          </pre>
                         </div>
-                        <pre className="text-xs text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap break-words">
-                          {statement}
-                        </pre>
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      <p className="text-slate-400 text-sm">No statements available</p>
+                    )}
                   </div>
                 </div>
 
