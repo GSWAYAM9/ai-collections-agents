@@ -98,7 +98,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Run Assessment Agent
-    const agent = new AssessmentAgent();
+    const agent = new AssessmentAgent(caseData.id, {
+      id: borrower.id,
+      name: borrower.name,
+      phone: borrower.phone_number,
+      debtAmount: debtAmount,
+      debtAgeDays: debtAgeDays || 90,
+    });
     const initialMessage = `Hello, I'm calling about a debt of $${debtAmount.toFixed(2)} that you may owe.`;
 
     if (stream) {
@@ -106,13 +112,10 @@ export async function POST(req: NextRequest) {
       const customReadable = new ReadableStream({
         async start(controller) {
           try {
-            const agentResponse = await agent.processMessage(initialMessage, {
-              borrowerId: borrower.id,
-              caseId: caseData.id,
-            });
+            const agentResponse = await agent.run(initialMessage);
 
             // Stream response word by word
-            const responseText = agentResponse.response;
+            const responseText = agentResponse.message;
             const words = responseText.split(' ');
             
             for (let i = 0; i < words.length; i++) {
@@ -135,7 +138,7 @@ export async function POST(req: NextRequest) {
               metrics: {
                 inputTokens: agentResponse.inputTokens || 0,
                 outputTokens: agentResponse.outputTokens || 0,
-                cost: agentResponse.cost || '0.00',
+                cost: ((agentResponse.inputTokens || 0) * 3 + (agentResponse.outputTokens || 0) * 15) / 1000000,
               },
               usingMockDb: useMock,
             });
@@ -160,10 +163,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Non-streaming response
-    const agentResponse = await agent.processMessage(initialMessage, {
-      borrowerId: borrower.id,
-      caseId: caseData.id,
-    });
+    const agentResponse = await agent.run(initialMessage);
 
     return NextResponse.json({
       success: true,
@@ -173,13 +173,13 @@ export async function POST(req: NextRequest) {
         name: borrower.name,
         phone: borrower.phone_number,
       },
-      firstAgentResponse: agentResponse.response,
+      firstAgentResponse: agentResponse.message,
       message: `Case created successfully${useMock ? ' (using mock database - set up Supabase for persistence)' : ''}`,
       usingMockDb: useMock,
       metrics: {
         inputTokens: agentResponse.inputTokens || 0,
         outputTokens: agentResponse.outputTokens || 0,
-        cost: agentResponse.cost || '0.00',
+        cost: ((agentResponse.inputTokens || 0) * 3 + (agentResponse.outputTokens || 0) * 15) / 1000000,
       },
     });
   } catch (error: any) {
