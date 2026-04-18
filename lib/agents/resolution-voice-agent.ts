@@ -83,7 +83,9 @@ export class ResolutionVoiceAgent {
 
       const payload = {
         phoneNumberId: this.vapiPhoneNumberId,
-        customerNumber: this.borrowerData.phone,
+        customer: {
+          number: this.borrowerData.phone.startsWith('+') ? this.borrowerData.phone : `+1${this.borrowerData.phone}`,
+        },
         assistantId: 'resolution-agent',
         assistantOverrides: {
           model: {
