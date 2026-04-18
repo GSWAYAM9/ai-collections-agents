@@ -60,21 +60,28 @@ export default function Dashboard() {
 
     try {
       const response = await fetch('/api/evaluation/run?batchSize=5&seed=42');
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Evaluation failed');
+      }
+
       const data = await response.json();
 
-      if (response.ok) {
+      if (data.success && data.evaluation) {
         setEvaluationStatus('success');
-        setEvaluationMessage(
-          `✓ Evaluation complete: ${data.conversations_evaluated || 0} conversations evaluated`
-        );
+        const msg = `✓ Evaluation complete: ${data.evaluation.total_conversations} conversations evaluated. 
+        Avg Resolution: ${(data.evaluation.avg_resolution_rate * 100).toFixed(1)}%, 
+        Compliance: ${(data.evaluation.avg_compliance_score * 100).toFixed(1)}%, 
+        Cost: $${data.totalCost}`;
+        setEvaluationMessage(msg);
         setTimeout(() => loadDashboard(), 2000);
       } else {
-        setEvaluationStatus('error');
-        setEvaluationMessage(`✗ Error: ${data.error}`);
+        throw new Error(data.error || 'Unknown error');
       }
     } catch (error: any) {
       setEvaluationStatus('error');
-      setEvaluationMessage(`✗ Failed: ${error.message}`);
+      setEvaluationMessage(`✗ Error: ${error.message}`);
     }
   };
 
@@ -83,21 +90,33 @@ export default function Dashboard() {
     setEvaluationMessage('Generating new prompts...');
 
     try {
-      const response = await fetch('/api/prompts/generate', { method: 'POST' });
+      const response = await fetch('/api/prompts/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentName: 'assessment',
+          improvementArea: 'compliance',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Generation failed');
+      }
+
       const data = await response.json();
 
-      if (response.ok) {
+      if (data.success && data.variant) {
         setEvaluationStatus('success');
         setEvaluationMessage(
-          `✓ Prompts generated: ${data.variants_generated || 0} variants created`
+          `✓ Generated new ${data.variant.agent_name} variant: ${data.variant.variant_letter}. Expected: ${data.variant.metadata.expected_improvement}`
         );
       } else {
-        setEvaluationStatus('error');
-        setEvaluationMessage(`✗ Error: ${data.error}`);
+        throw new Error(data.error || 'Unknown error');
       }
     } catch (error: any) {
       setEvaluationStatus('error');
-      setEvaluationMessage(`✗ Failed: ${error.message}`);
+      setEvaluationMessage(`✗ Error: ${error.message}`);
     }
   };
 
