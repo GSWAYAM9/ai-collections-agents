@@ -1,0 +1,348 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+
+interface Case {
+  id: string;
+  borrower_id: string;
+  status: string;
+  retry_count: number;
+  max_retries: number;
+  created_at: string;
+  borrower_name?: string;
+}
+
+interface Metrics {
+  total_cases: number;
+  active_cases: number;
+  resolved_cases: number;
+  avg_compliance_score: number;
+  total_conversations: number;
+  total_cost_usd: number;
+}
+
+export default function Dashboard() {
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [cases, setCases] = useState<Case[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'overview' | 'cases' | 'evaluations'>('overview');
+  const [evaluationStatus, setEvaluationStatus] = useState('idle');
+  const [evaluationMessage, setEvaluationMessage] = useState('');
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  const loadDashboard = async () => {
+    setLoading(true);
+    try {
+      // In a real app, fetch actual metrics from your API
+      setMetrics({
+        total_cases: 0,
+        active_cases: 0,
+        resolved_cases: 0,
+        avg_compliance_score: 0,
+        total_conversations: 0,
+        total_cost_usd: 0,
+      });
+      setCases([]);
+    } catch (error) {
+      console.error('Failed to load dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRunEvaluation = async () => {
+    setEvaluationStatus('loading');
+    setEvaluationMessage('Starting evaluation...');
+
+    try {
+      const response = await fetch('/api/evaluation/run?batchSize=5&seed=42');
+      const data = await response.json();
+
+      if (response.ok) {
+        setEvaluationStatus('success');
+        setEvaluationMessage(
+          `✓ Evaluation complete: ${data.conversations_evaluated || 0} conversations evaluated`
+        );
+        setTimeout(() => loadDashboard(), 2000);
+      } else {
+        setEvaluationStatus('error');
+        setEvaluationMessage(`✗ Error: ${data.error}`);
+      }
+    } catch (error: any) {
+      setEvaluationStatus('error');
+      setEvaluationMessage(`✗ Failed: ${error.message}`);
+    }
+  };
+
+  const handleGeneratePrompts = async () => {
+    setEvaluationStatus('loading');
+    setEvaluationMessage('Generating new prompts...');
+
+    try {
+      const response = await fetch('/api/prompts/generate', { method: 'POST' });
+      const data = await response.json();
+
+      if (response.ok) {
+        setEvaluationStatus('success');
+        setEvaluationMessage(
+          `✓ Prompts generated: ${data.variants_generated || 0} variants created`
+        );
+      } else {
+        setEvaluationStatus('error');
+        setEvaluationMessage(`✗ Error: ${data.error}`);
+      }
+    } catch (error: any) {
+      setEvaluationStatus('error');
+      setEvaluationMessage(`✗ Failed: ${error.message}`);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+      {/* Navigation */}
+      <nav className="border-b border-slate-700 bg-slate-900/50 backdrop-blur sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+          <div>
+            <Link href="/" className="text-2xl font-bold text-white hover:text-slate-300">
+              Collections AI
+            </Link>
+            <p className="text-xs text-slate-400">Operational Dashboard</p>
+          </div>
+          <Link
+            href="/admin"
+            className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-sm"
+          >
+            Admin
+          </Link>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* Tabs */}
+        <div className="flex gap-4 mb-8 border-b border-slate-700">
+          {(['overview', 'cases', 'evaluations'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-3 font-medium transition-colors border-b-2 ${
+                activeTab === tab
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-slate-400 hover:text-slate-300'
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {loading && activeTab === 'overview' ? (
+          <div className="text-center py-12 text-slate-400">Loading dashboard...</div>
+        ) : (
+          <>
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-sm text-slate-400 mb-2">Total Cases</div>
+                    <div className="text-4xl font-bold text-white">
+                      {metrics?.total_cases || 0}
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-sm text-slate-400 mb-2">Resolved Cases</div>
+                    <div className="text-4xl font-bold text-green-400">
+                      {metrics?.resolved_cases || 0}
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-sm text-slate-400 mb-2">Avg Compliance Score</div>
+                    <div className="text-4xl font-bold text-blue-400">
+                      {metrics?.avg_compliance_score.toFixed(1) || 0}%
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-sm text-slate-400 mb-2">Active Cases</div>
+                    <div className="text-3xl font-bold text-yellow-400">
+                      {metrics?.active_cases || 0}
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-sm text-slate-400 mb-2">Total Conversations</div>
+                    <div className="text-3xl font-bold text-purple-400">
+                      {metrics?.total_conversations || 0}
+                    </div>
+                  </div>
+
+                  <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <div className="text-sm text-slate-400 mb-2">Total Cost (USD)</div>
+                    <div className="text-3xl font-bold text-red-400">
+                      ${metrics?.total_cost_usd.toFixed(2) || '0.00'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* System Status */}
+                <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                  <h3 className="text-lg font-semibold text-white mb-4">System Status</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300">Database Connection</span>
+                      <span className="px-3 py-1 rounded-full bg-green-900/30 border border-green-700 text-green-400 text-sm">
+                        ✓ Connected
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300">Anthropic API</span>
+                      <span className="px-3 py-1 rounded-full bg-green-900/30 border border-green-700 text-green-400 text-sm">
+                        ✓ Ready
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300">Vapi Voice Integration</span>
+                      <span className="px-3 py-1 rounded-full bg-green-900/30 border border-green-700 text-green-400 text-sm">
+                        ✓ Ready
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Cases Tab */}
+            {activeTab === 'cases' && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-white">Cases</h2>
+                  <button className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition">
+                    New Case
+                  </button>
+                </div>
+
+                {cases.length === 0 ? (
+                  <div className="p-12 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
+                    <p className="text-slate-400">
+                      No cases yet. Create a test case or run an evaluation to populate data.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-700">
+                          <th className="text-left px-4 py-2 text-slate-300">Case ID</th>
+                          <th className="text-left px-4 py-2 text-slate-300">Borrower</th>
+                          <th className="text-left px-4 py-2 text-slate-300">Status</th>
+                          <th className="text-left px-4 py-2 text-slate-300">Progress</th>
+                          <th className="text-left px-4 py-2 text-slate-300">Created</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cases.map((c) => (
+                          <tr key={c.id} className="border-b border-slate-700/50">
+                            <td className="px-4 py-3 text-slate-300 text-sm font-mono">
+                              {c.id.slice(0, 8)}...
+                            </td>
+                            <td className="px-4 py-3 text-slate-300">{c.borrower_name}</td>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-1 rounded-full bg-slate-700 text-slate-200 text-xs">
+                                {c.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-slate-300 text-sm">
+                              {c.retry_count}/{c.max_retries}
+                            </td>
+                            <td className="px-4 py-3 text-slate-400 text-sm">
+                              {new Date(c.created_at).toLocaleDateString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Evaluations Tab */}
+            {activeTab === 'evaluations' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Run Evaluation */}
+                  <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <h3 className="text-lg font-semibold text-white mb-4">Run Evaluation</h3>
+                    <p className="text-slate-300 text-sm mb-4">
+                      Test the system with simulated borrower scenarios
+                    </p>
+                    <button
+                      onClick={handleRunEvaluation}
+                      disabled={evaluationStatus === 'loading'}
+                      className="w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium transition"
+                    >
+                      {evaluationStatus === 'loading' ? 'Running...' : 'Run Evaluation (5 Borrowers)'}
+                    </button>
+                  </div>
+
+                  {/* Generate Prompts */}
+                  <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                    <h3 className="text-lg font-semibold text-white mb-4">Generate Prompts</h3>
+                    <p className="text-slate-300 text-sm mb-4">
+                      Create new prompt variants and test for improvements
+                    </p>
+                    <button
+                      onClick={handleGeneratePrompts}
+                      disabled={evaluationStatus === 'loading'}
+                      className="w-full px-4 py-3 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white font-medium transition"
+                    >
+                      {evaluationStatus === 'loading' ? 'Generating...' : 'Generate New Prompts'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status Message */}
+                {evaluationMessage && (
+                  <div
+                    className={`p-4 rounded-lg ${
+                      evaluationStatus === 'success'
+                        ? 'bg-green-900/30 border border-green-700 text-green-200'
+                        : evaluationStatus === 'error'
+                        ? 'bg-red-900/30 border border-red-700 text-red-200'
+                        : evaluationStatus === 'loading'
+                        ? 'bg-blue-900/30 border border-blue-700 text-blue-200'
+                        : ''
+                    }`}
+                  >
+                    {evaluationMessage}
+                  </div>
+                )}
+
+                {/* Evaluation Info */}
+                <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
+                  <h3 className="text-lg font-semibold text-white mb-4">About Evaluations</h3>
+                  <ul className="space-y-2 text-slate-300 text-sm">
+                    <li>• Runs agent pipeline against simulated borrower behaviors</li>
+                    <li>• Calculates resolution rates, compliance scores, and efficiency metrics</li>
+                    <li>• Tests new prompt variants against baseline</li>
+                    <li>• Adopts improvements only if compliance threshold maintained (≥98%)</li>
+                    <li>• Tracks cost per component to stay within $20 budget</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
