@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ensure phone number is in E.164 format (no dashes or spaces)
-    let formattedPhone = borrowerPhone.replace(/[\s\-\(\)]/g, ''); // Remove all spaces, dashes, parentheses
+    let formattedPhone = borrowerPhone.replace(/[\s\-\(\)]/g, '');
     if (!formattedPhone.startsWith('+')) {
       formattedPhone = `+1${formattedPhone}`;
     }
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     console.log('[v0] Phone:', formattedPhone);
     console.log('[v0] Phone Number ID:', vapiPhoneNumberId.slice(0, 8) + '...');
 
-    // Build payload - assistantId is optional, only include if set
+    // Build minimal payload for Vapi
     const vapiPayload: any = {
       phoneNumberId: vapiPhoneNumberId,
       customer: {
@@ -55,18 +55,17 @@ export async function POST(req: NextRequest) {
     // Only add assistantId if explicitly configured
     if (process.env.VAPI_ASSISTANT_ID) {
       vapiPayload.assistantId = process.env.VAPI_ASSISTANT_ID;
-    }
-
-    // Add assistant overrides
-    vapiPayload.assistantOverrides = {
-      model: {
-        provider: 'anthropic',
-        model: 'claude-3-5-sonnet-20241022',
-        temperature: 0.7,
-        messages: [
-          {
-            role: 'system',
-            content: `You are the Resolution Agent for a debt collections company. Your goal is to negotiate payment terms with the borrower.
+    } else {
+      // If no assistant ID, provide system prompt through assistantOverrides
+      vapiPayload.assistantOverrides = {
+        model: {
+          provider: 'anthropic',
+          model: 'claude-3-5-sonnet-20241022',
+          temperature: 0.7,
+          messages: [
+            {
+              role: 'system',
+              content: `You are the Resolution Agent for a debt collections company. Your goal is to negotiate payment terms with the borrower.
             
 Key objectives:
 1. Confirm the debt amount and borrower identity
@@ -84,15 +83,18 @@ Important compliance rules:
 
 Borrower Name: ${borrowerName}
 Debt Case ID: ${caseId}`,
-          },
-        ],
-      },
-      voice: {
-        provider: '11labs',
-        voiceId: 'paula',
-      },
-      firstMessage: `Hi ${borrowerName}, this is a follow-up regarding your debt account. Do you have a few minutes to discuss a payment arrangement that works for your situation?`,
-    };
+            },
+          ],
+        },
+        voice: {
+          provider: '11labs',
+          voiceId: 'paula',
+        },
+        firstMessage: `Hi ${borrowerName}, this is a follow-up regarding your debt account. Do you have a few minutes to discuss a payment arrangement that works for your situation?`,
+      };
+    }
+
+    const vapiResponse = await fetch('https://api.vapi.ai/call', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${vapiApiKey}`,

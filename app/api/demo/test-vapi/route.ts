@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     console.log('[v0] Testing Vapi API with:', { originalPhone: phoneNumber, formattedPhone, borrowerName });
 
-    // Call Vapi API to initiate a voice call using correct endpoint and payload
+    // Call Vapi API to initiate a voice call with correct payload structure
     const callPayload: any = {
       phoneNumberId: vapiPhoneNumberId,
       customer: {
@@ -47,19 +47,18 @@ export async function POST(req: NextRequest) {
     // Only add assistantId if explicitly configured
     if (process.env.VAPI_ASSISTANT_ID) {
       callPayload.assistantId = process.env.VAPI_ASSISTANT_ID;
-    }
-
-    // Add assistant overrides
-    callPayload.assistantOverrides = {
-      model: {
-        provider: 'anthropic',
-        model: 'claude-3-5-sonnet-20241022',
-        temperature: 0.7,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a professional debt resolution agent. Your goal is to reach a mutually beneficial payment arrangement with the borrower.
-            
+    } else {
+      // If no assistant ID, provide system prompt directly
+      callPayload.assistantOverrides = {
+        model: {
+          provider: 'anthropic',
+          model: 'claude-3-5-sonnet-20241022',
+          temperature: 0.7,
+          messages: [
+            {
+              role: 'system',
+              content: `You are a professional debt resolution agent. Your goal is to reach a mutually beneficial payment arrangement with the borrower.
+              
 Key guidelines:
 - Be professional and empathetic
 - Explain available payment options clearly
@@ -72,15 +71,18 @@ Key guidelines:
 Borrower: ${borrowerName}
 
 Start by introducing yourself and explaining the purpose of the call.`,
-          },
-        ],
-      },
-      voice: {
-        provider: '11labs',
-        voiceId: 'paula',
-      },
-      firstMessage: `Hi ${borrowerName}, I'm calling to help you with a resolution on your account. Do you have a few minutes to talk?`,
-    };
+            },
+          ],
+        },
+        voice: {
+          provider: '11labs',
+          voiceId: 'paula',
+        },
+        firstMessage: `Hi ${borrowerName}, I'm calling to help you with a resolution on your account. Do you have a few minutes to talk?`,
+      };
+    }
+
+    console.log('[v0] Vapi call payload:', JSON.stringify(callPayload, null, 2).substring(0, 200) + '...');
 
     const vapiResponse = await fetch('https://api.vapi.ai/call', {
       method: 'POST',
