@@ -13,12 +13,16 @@ export default function CreateCasePage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [streamedResponse, setStreamedResponse] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     setResult(null);
+    setStreaming(true);
+    setStreamedResponse('');
 
     try {
       const response = await fetch('/api/cases/create', {
@@ -29,25 +33,58 @@ export default function CreateCasePage() {
           phoneNumber: formData.phoneNumber,
           debtAmount: parseFloat(formData.debtAmount),
           debtAgeDays: parseInt(formData.debtAgeDays),
+          stream: true,
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
+        const data = await response.json();
         setError(data.error || 'Failed to create case');
-      } else {
-        setResult(data);
-        setFormData({
-          borrowerName: '',
-          phoneNumber: '+1-',
-          debtAmount: '',
-          debtAgeDays: '90',
-        });
+        setStreaming(false);
+        setLoading(false);
+        return;
+      }
+
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      if (!reader) throw new Error('No response body');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'chunk') {
+                setStreamedResponse((prev) => prev + data.content);
+              } else if (data.type === 'complete') {
+                setResult(data);
+                setFormData({
+                  borrowerName: '',
+                  phoneNumber: '+1-',
+                  debtAmount: '',
+                  debtAgeDays: '90',
+                });
+              }
+            } catch (e) {
+              // Parse error, skip
+            }
+          }
+        }
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred');
     } finally {
+      setStreaming(false);
       setLoading(false);
     }
   };
@@ -181,21 +218,55 @@ export default function CreateCasePage() {
                 <p><strong>Borrower:</strong> {result.borrower.name}</p>
                 <p><strong>Phone:</strong> {result.borrower.phone}</p>
                 <p><strong>Status:</strong> {result.case.status}</p>
+                <p><strong>Tokens Used:</strong> {result.metrics?.inputTokens || 0} input, {result.metrics?.outputTokens || 0} output</p>
+                <p><strong>Cost:</strong> ${result.metrics?.cost || '0.00'}</p>
               </div>
 
               <div className="pt-4 border-t border-green-700">
                 <p className="text-sm font-semibold text-green-300 mb-2">Assessment Agent Response:</p>
-                <p className="text-green-100 text-sm bg-slate-900/50 p-3 rounded">
-                  {result.firstAgentResponse}
-                </p>
+                <div className="text-green-100 text-sm bg-slate-900/50 p-3 rounded max-h-48 overflow-y-auto">
+                  {streaming ? (
+                    <div className="space-y-2">
+                      <p className="animate-pulse text-slate-400">Streaming response...</p>
+                      <p>{streamedResponse}</p>
+                    </div>
+                  ) : (
+                    <p>{streamedResponse || result.firstAgentResponse}</p>
+                  )}
+                </div>
               </div>
 
-              <Link
-                href="/dashboard"
-                className="block mt-4 text-center px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition text-sm font-medium"
-              >
-                View in Dashboard
-              </Link>
+              <div className="pt-4 flex gap-2">
+                <Link
+                  href="/dashboard"
+                  className="flex-1 text-center px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition text-sm font-medium"
+                >
+                  View in Dashboard
+                </Link>
+                <Link
+                  href={`/cases/${result.case.id}`}
+                  className="flex-1 text-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
+                >
+                  View Details
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Streaming Response */}
+          {streaming && (
+            <div className="mt-6 p-6 rounded-lg bg-blue-900/30 border border-blue-700">
+              <p className="text-blue-200 font-semibold mb-3">Assessment Agent is analyzing...</p>
+              <div className="text-blue-100 text-sm bg-slate-900/50 p-3 rounded min-h-24">
+                {streamedResponse ? (
+                  streamedResponse
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                    <span className="text-slate-400">Streaming response from Claude...</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

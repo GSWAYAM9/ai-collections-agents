@@ -258,62 +258,115 @@ export default function Dashboard() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-white">Cases</h2>
-                  <button 
-                    onClick={loadDashboard}
-                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
-                  >
-                    Load Test Data
-                  </button>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={loadDashboard}
+                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
+                    >
+                      Refresh
+                    </button>
+                    <Link
+                      href="/cases/start"
+                      className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition text-sm font-medium"
+                    >
+                      New Case
+                    </Link>
+                  </div>
                 </div>
 
                 {cases.length === 0 ? (
                   <div className="p-12 rounded-lg bg-slate-800/50 border border-slate-700 text-center">
                     <p className="text-slate-400 mb-4">
-                      No cases yet. Load test data to see sample borrower cases.
+                      No cases yet. Create a new case or load test data to get started.
                     </p>
-                    <button 
-                      onClick={loadDashboard}
-                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm"
-                    >
-                      Generate Test Data
-                    </button>
+                    <div className="flex gap-3 justify-center">
+                      <Link
+                        href="/cases/start"
+                        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm"
+                      >
+                        Create Case
+                      </Link>
+                      <button 
+                        onClick={loadDashboard}
+                        className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-sm"
+                      >
+                        Load Test Data
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-slate-700">
-                          <th className="text-left px-4 py-2 text-slate-300">Borrower</th>
-                          <th className="text-left px-4 py-2 text-slate-300">Status</th>
-                          <th className="text-left px-4 py-2 text-slate-300">Progress</th>
-                          <th className="text-left px-4 py-2 text-slate-300">Created</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {cases.map((c) => (
-                          <tr key={c.id} className="border-b border-slate-700/50 hover:bg-slate-800/30">
-                            <td className="px-4 py-3 text-slate-300 font-medium">{c.borrower_name}</td>
-                            <td className="px-4 py-3">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                c.status === 'resolved' 
-                                  ? 'bg-green-900/30 border border-green-700 text-green-400'
-                                  : c.status === 'in_negotiation'
-                                  ? 'bg-blue-900/30 border border-blue-700 text-blue-400'
-                                  : 'bg-yellow-900/30 border border-yellow-700 text-yellow-400'
-                              }`}>
-                                {c.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-slate-300 text-sm">
-                              {c.retry_count}/{c.max_retries} retries
-                            </td>
-                            <td className="px-4 py-3 text-slate-400 text-sm">
-                              {new Date(c.created_at).toLocaleDateString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-4">
+                    {cases.map((c) => (
+                      <div key={c.id} className="p-4 rounded-lg bg-slate-800/50 border border-slate-700 hover:border-slate-600 transition">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">{c.borrower_name}</h3>
+                            <p className="text-xs text-slate-400">Case ID: {c.id.slice(0, 12)}...</p>
+                          </div>
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            c.status === 'resolved' 
+                              ? 'bg-green-900/30 border border-green-700 text-green-400'
+                              : c.status === 'in_resolution' || c.status === 'in_negotiation'
+                              ? 'bg-blue-900/30 border border-blue-700 text-blue-400'
+                              : c.status === 'initial_contact' || c.status === 'assessment'
+                              ? 'bg-yellow-900/30 border border-yellow-700 text-yellow-400'
+                              : 'bg-purple-900/30 border border-purple-700 text-purple-400'
+                          }`}>
+                            {c.status?.replace(/_/g, ' ').toUpperCase()}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
+                          <div>
+                            <p className="text-slate-400">Retries</p>
+                            <p className="text-white font-semibold">{c.retry_count}/{c.max_retries}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400">Created</p>
+                            <p className="text-white font-semibold">{new Date(c.created_at).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400">Progress</p>
+                            <div className="mt-1 h-2 bg-slate-900/50 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-blue-600"
+                                style={{ width: `${(33 * (['initial_contact', 'assessment'].includes(c.status) ? 1 : ['in_resolution', 'in_negotiation'].includes(c.status) ? 2 : 3)) / 3 * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Link
+                            href={`/cases/${c.id}`}
+                            className="flex-1 text-center px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-sm font-medium"
+                          >
+                            View Details
+                          </Link>
+                          {['initial_contact', 'assessment'].includes(c.status) && (
+                            <button
+                              className="flex-1 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition text-sm font-medium"
+                            >
+                              Move to Resolution
+                            </button>
+                          )}
+                          {['in_resolution', 'in_negotiation'].includes(c.status) && (
+                            <button
+                              className="flex-1 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition text-sm font-medium"
+                            >
+                              Move to Final Notice
+                            </button>
+                          )}
+                          {['final_notice', 'escalated'].includes(c.status) && (
+                            <button
+                              className="flex-1 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition text-sm font-medium"
+                            >
+                              Mark Resolved
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
