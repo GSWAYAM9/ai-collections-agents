@@ -30,8 +30,27 @@ export async function POST(req: NextRequest) {
 
     // Ensure phone number has + prefix and is in E.164 format (no dashes or spaces)
     let formattedPhone = phoneNumber.replace(/[\s\-\(\)]/g, ''); // Remove all spaces, dashes, parentheses
+    
+    // Add country code if missing
     if (!formattedPhone.startsWith('+')) {
-      formattedPhone = `+1${formattedPhone}`;
+      // Check if it looks like a US number (10 digits)
+      if (formattedPhone.match(/^\d{10}$/)) {
+        formattedPhone = `+1${formattedPhone}`;
+      } else {
+        formattedPhone = `+${formattedPhone}`;
+      }
+    }
+
+    // Validate E.164 format: + followed by 1-15 digits
+    if (!formattedPhone.match(/^\+[1-9]\d{1,14}$/)) {
+      return NextResponse.json(
+        {
+          error: 'Invalid phone number format',
+          details: `Phone number must be in E.164 format. Got: ${formattedPhone}`,
+          hint: 'E.164 format: +[country code][number]. Example: +15550123456 (US) or +919876543210 (India)',
+        },
+        { status: 400 }
+      );
     }
 
     console.log('[v0] Testing Vapi API with:', { originalPhone: phoneNumber, formattedPhone, borrowerName });
