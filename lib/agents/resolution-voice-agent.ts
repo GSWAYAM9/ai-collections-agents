@@ -102,7 +102,14 @@ export class ResolutionVoiceAgent {
         customer: {
           number: this.formatPhoneE164(this.borrowerData.phone),
         },
-        assistantOverrides: {
+      };
+
+      // Only add assistantId if explicitly configured
+      if (process.env.VAPI_ASSISTANT_ID) {
+        payload.assistantId = process.env.VAPI_ASSISTANT_ID;
+      } else {
+        // If no assistant ID, provide system prompt through assistantOverrides
+        payload.assistantOverrides = {
           model: {
             provider: 'anthropic',
             model: 'claude-3-5-sonnet-20241022',
@@ -122,21 +129,10 @@ export class ResolutionVoiceAgent {
           maxDurationSeconds: 600,
           endCallMessage: 'Thank you for working with us. We appreciate your cooperation.',
           endCallPhrase: 'bye',
-        },
-        metadata: {
-          borrowerId: this.borrowerData.id,
-          caseId: this.conversationId,
-          debtAmount: this.borrowerData.debtAmount,
-          debtAgeDays: this.borrowerData.debtAgeDays,
-        },
-      };
-
-      // Only add assistantId if explicitly configured
-      if (process.env.VAPI_ASSISTANT_ID) {
-        payload.assistantId = process.env.VAPI_ASSISTANT_ID;
+        };
       }
 
-      console.log('[v0] Vapi payload prepared:', JSON.stringify(payload, null, 2));
+      console.log('[v0] Vapi payload prepared (minimal structure)');
 
       const response = await this.vapiClient.post('/call', payload);
 
