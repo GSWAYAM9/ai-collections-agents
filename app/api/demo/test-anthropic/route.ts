@@ -40,17 +40,41 @@ Important FDCPA Compliance Requirements:
 
 Generate a helpful, empathetic response that moves the conversation forward while maintaining compliance.`;
 
-    const response = await client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 500,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: borrowerMessage,
-        },
-      ],
-    });
+    let response;
+    const modelsToTry = [
+      'claude-opus-4-1-20250805',
+      'claude-3-5-sonnet-20241022',
+      'claude-3-sonnet-20240229',
+      'claude-opus-4-20250514',
+    ];
+
+    for (const model of modelsToTry) {
+      try {
+        console.log('[v0] Trying model:', model);
+        response = await client.messages.create({
+          model: model,
+          max_tokens: 500,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: borrowerMessage,
+            },
+          ],
+        });
+        console.log('[v0] Success with model:', model);
+        break;
+      } catch (modelError: any) {
+        console.log('[v0] Model failed:', model, modelError.status, modelError.error?.message);
+        if (model === modelsToTry[modelsToTry.length - 1]) {
+          throw modelError;
+        }
+      }
+    }
+
+    if (!response) {
+      throw new Error('No Claude model available');
+    }
 
     const messageContent = response.content[0];
     if (messageContent.type !== 'text') {
@@ -76,7 +100,7 @@ Generate a helpful, empathetic response that moves the conversation forward whil
       inputTokens,
       outputTokens,
       cost: totalCost.toFixed(6),
-      model: 'claude-3-5-sonnet-20241022',
+      model: response.model,
     });
   } catch (error: any) {
     console.error('[v0] Anthropic test error:', error);
