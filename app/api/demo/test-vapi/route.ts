@@ -14,16 +14,39 @@ export async function POST(req: NextRequest) {
     const vapiApiKey = process.env.VAPI_API_KEY;
     const vapiPhoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
 
+    console.log('[v0] API Key Check:', {
+      hasApiKey: !!vapiApiKey,
+      apiKeyLength: vapiApiKey?.length || 0,
+      apiKeyStart: vapiApiKey ? vapiApiKey.substring(0, 10) + '...' : 'NOT SET',
+      hasPhoneNumberId: !!vapiPhoneNumberId,
+    });
+
     if (!vapiApiKey) {
       return NextResponse.json(
-        { error: 'VAPI_API_KEY not configured' },
+        {
+          error: 'VAPI_API_KEY not configured',
+          hint: 'Go to Settings > Vars and add your VAPI_API_KEY environment variable from Vapi dashboard',
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!vapiApiKey || vapiApiKey.trim().length === 0) {
+      return NextResponse.json(
+        {
+          error: 'VAPI_API_KEY is empty or contains only whitespace',
+          hint: 'Verify that the API key is properly set without extra spaces',
+        },
         { status: 500 }
       );
     }
 
     if (!vapiPhoneNumberId) {
       return NextResponse.json(
-        { error: 'VAPI_PHONE_NUMBER_ID not configured' },
+        {
+          error: 'VAPI_PHONE_NUMBER_ID not configured',
+          hint: 'Go to Settings > Vars and add your VAPI_PHONE_NUMBER_ID from Vapi dashboard',
+        },
         { status: 500 }
       );
     }
@@ -120,10 +143,29 @@ Start by introducing yourself and explaining the purpose of the call.`,
         error: callData,
       });
 
+      // Handle authentication errors specifically
+      if (vapiResponse.status === 401) {
+        return NextResponse.json(
+          {
+            error: 'Vapi API Authentication Failed (401)',
+            details: 'Your VAPI_API_KEY is invalid or expired',
+            vapiError: callData.error?.message || callData.message || 'Unauthorized',
+            suggestion: 'Check your Vapi dashboard to verify your API key is valid and has not expired',
+            debugInfo: {
+              apiKeySet: !!process.env.VAPI_API_KEY,
+              apiKeyLength: process.env.VAPI_API_KEY?.length || 0,
+            },
+          },
+          { status: 401 }
+        );
+      }
+
       return NextResponse.json(
         {
           error: 'Vapi API call failed',
-          details: callData.message || callData.error || 'Unknown error',
+          details: Array.isArray(callData.error?.message) 
+            ? callData.error.message.join(', ')
+            : (callData.message || callData.error || 'Unknown error'),
           vapiStatus: vapiResponse.status,
         },
         { status: vapiResponse.status || 500 }
