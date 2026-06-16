@@ -1,200 +1,234 @@
 /**
- * Evaluation Harness
- * Orchestrates evaluation runs, tracks results, manages statistical significance
+ * Evaluation harness — runs a full batch of agent <-> borrower conversations
+ * for ONE prompt, judges each, persists every conversation, and aggregates the
+ * run-level metrics.
+ *
+ * This is the real version of what was previously faked. Each conversation:
+ *   1. is generated turn-by-turn by `runConversation` (real LLM agent + borrower)
+ *   2. is scored by the LLM judge (`judgeConversation`)
+ *   3. is written to `eval_conversations`
+ * and the aggregate is written to `eval_runs`.
  */
 
-import { v4 as uuidv4 } from 'uuid'
-import { SimulatedBorrowerGenerator } from '@/lib/evaluation/simulated-borrower'
-import { MetricsCalculator } from '@/lib/evaluation/metrics-calculator'
+import { CHEAP_MODEL, type CostTracker } from '@/lib/llm'
+import { getPersonaBatch, type BorrowerPersona } from '@/lib/evaluation/personas'
+import { runConversation } from '@/lib/evaluation/conversation-runner'
+import { judgeConversation, type ScoredConversation } from '@/lib/evaluation/llm-judge'
+import { mean } from '@/lib/evaluation/statistics'
 import {
-  createEvaluationRun,
-  insertConversationScores,
-  logCost,
-  supabaseAdmin,
+  createEvalRun,
+  updateEvalRun,
+  insertEvalConversation,
 } from '@/lib/supabase-client'
-import { hashConfiguration } from '@/lib/utils-collections'
 
-export interface EvaluationRunConfig {
+export interface RunConfig {
+  agentName: string
+  prompt: string
+  label: string
+  variantId?: string
   batchSize: number
-  variants: string[] // Prompt variants to test
-  seed: number
+  maxTurns?: number
+  model?: string
+  tracker?: CostTracker
+  /** Optional rubric addendum for the judge (used after a meta-revision). */
+  rubricAddendum?: string
 }
 
-export interface EvaluationResult {
-  run_id: string
-  batch_size: number
-  total_conversations: number
-  avg_resolution_rate: number
-  avg_compliance_score: number
-  avg_context_efficiency: number
-  metadata: {
-    variantsTested: string[]
-    seedUsed: number
-    timestamp: string
-  }
+export interface ConversationRecord extends ScoredConversation {
+  id: string
+  persona: string
+  agentTokens: number
 }
 
-export class EvaluationHarness {
-  private configHash: string
-  private costTotal: number = 0
+export interface RunMetrics {
+  runId: string
+  label: string
+  numConversations: number
+  complianceRate: number // mean compliance score (0-100)
+  resolutionRate: number // mean resolution rate (0-1)
+  avgEfficiency: number // mean context efficiency (0-1)
+  avgSentiment: number // mean borrower sentiment (-1..1)
+  avgOverall: number // blended 0-1 score
+  costUsd: number
+  conversations: ConversationRecord[]
+  // raw per-conversation arrays for significance testing
+  overallScores: number[]
+  complianceScores: number[]
+  resolutionScores: number[]
+}
 
-  constructor(private config: EvaluationRunConfig) {
-    this.configHash = hashConfiguration(config)
+/** Blended quality score in 0-1, compliance-gated. */
+export function overallScore(c: ScoredConversation): number {
+  const compliance = c.compliance_score / 100 // 0-1
+  const sentiment01 = (c.borrower_sentiment + 1) / 2 // 0-1
+  // Compliance is a hard gate: weight it heavily.
+  const blended =
+    0.45 * compliance +
+    0.3 * c.resolution_rate +
+    0.15 * c.context_efficiency +
+    0.1 * sentiment01
+  return Number(blended.toFixed(4))
+}
+
+export async function runEvaluation(config: RunConfig): Promise<RunMetrics> {
+  const personas: BorrowerPersona[] = getPersonaBatch(config.batchSize)
+  const model = config.model ?? CHEAP_MODEL
+
+  const run = await createEvalRun({
+    agent_name: config.agentName,
+    label: config.label,
+    variant_id: config.variantId ?? null,
+    num_conversations: 0,
+  })
+
+  const conversations: ConversationRecord[] = []
+  const overallScores: number[] = []
+  const complianceScores: number[] = []
+  const resolutionScores: number[] = []
+  const efficiencyScores: number[] = []
+  const sentimentScores: number[] = []
+
+  // Repeat personas if batchSize exceeds the unique persona count, so we can
+  // get more samples for the t-test when desired.
+  const scenarios: BorrowerPersona[] = []
+  for (let i = 0; i < config.batchSize; i++) {
+    scenarios.push(personas[i % personas.length])
   }
 
-  /**
-   * Run evaluation
-   */
-  async runEvaluation(): Promise<EvaluationResult> {
-    // Create evaluation run record
-    const runRecord = await createEvaluationRun({
-      batch_size: this.config.batchSize,
-      configuration_hash: this.configHash,
-      metadata: {
-        variants: this.config.variants,
-        seed: this.config.seed,
-      },
-    })
-
-    const runId = runRecord.id
-
-    // Generate test batch
-    const borrowers = SimulatedBorrowerGenerator.generateTestBatch(
-      this.config.batchSize
-    )
-
-    const allScores: any[] = []
-    let totalResolution = 0
-    let totalCompliance = 0
-    let totalEfficiency = 0
-
-    // Evaluate each borrower scenario
-    for (let i = 0; i < borrowers.length; i++) {
-      const borrower = borrowers[i]
-
-      // Simulate conversation (in real system, this would be actual agent interactions)
-      const conversationMetrics = await this.simulateConversation(borrower)
-
-      totalResolution += conversationMetrics.resolution_rate
-      totalCompliance += conversationMetrics.compliance_score
-      totalEfficiency += conversationMetrics.context_efficiency
-
-      // Store conversation score
-      const score = await insertConversationScores({
-        evaluation_run_id: runId,
-        conversation_id: uuidv4(),
-        case_id: uuidv4(),
-        ...conversationMetrics,
-      })
-
-      allScores.push(score)
+  for (const persona of scenarios) {
+    // Stop early if the cost ceiling is reached; surface partial results.
+    if (config.tracker) {
+      try {
+        config.tracker.assertHasBudget()
+      } catch {
+        console.log('[v0] cost ceiling reached mid-run; stopping batch early')
+        break
+      }
     }
 
-    const result: EvaluationResult = {
-      run_id: runId,
-      batch_size: this.config.batchSize,
-      total_conversations: this.config.batchSize,
-      avg_resolution_rate: totalResolution / this.config.batchSize,
-      avg_compliance_score: totalCompliance / this.config.batchSize,
-      avg_context_efficiency: totalEfficiency / this.config.batchSize,
-      metadata: {
-        variantsTested: this.config.variants,
-        seedUsed: this.config.seed,
-        timestamp: new Date().toISOString(),
-      },
-    }
-
-    return result
-  }
-
-  /**
-   * Simulate a conversation with a borrower
-   */
-  private async simulateConversation(borrower: any): Promise<any> {
-    // Generate simulated responses
-    const scenario = SimulatedBorrowerGenerator.generateBorrowerResponses(
-      { personality: 'sympathetic', financialSituation: 'struggling', likelihood: 0.8, name: '' }
-    )
-
-    // Create mock messages
-    const messages = [
-      { role: 'user', content: scenario[0], token_count: 50 },
-      { role: 'assistant', content: 'Thank you for responding.', token_count: 30 },
-      { role: 'user', content: scenario[1], token_count: 60 },
-    ]
-
-    const transcript = messages.map((m) => `${m.role}: ${m.content}`).join('\n')
-
-    // Calculate metrics
-    const metrics = MetricsCalculator.calculateAllMetrics({
-      messages,
-      transcript,
-      inputTokens: 200,
-      outputTokens: 150,
-      borrowerData: borrower,
-      agentName: 'assessment',
+    const convo = await runConversation({
+      agentName: config.agentName,
+      agentPrompt: config.prompt,
+      persona,
+      maxTurns: config.maxTurns ?? 4,
+      model,
+      tracker: config.tracker,
     })
 
-    // Log simulated cost
-    await logCost({
-      component: 'evaluation',
-      provider: 'anthropic',
-      input_tokens: 200,
-      output_tokens: 150,
-      cost_usd: 0.0045,
-      operation: 'evaluation_simulation',
+    const scored = await judgeConversation({
+      transcript: convo.transcript,
+      persona,
+      agentTokens: convo.totalAgentTokens,
+      model,
+      tracker: config.tracker,
+      rubricAddendum: config.rubricAddendum,
     })
 
-    this.costTotal += 0.0045
+    const overall = overallScore(scored)
 
-    return metrics
+    const record = await insertEvalConversation({
+      run_id: run.id,
+      agent_name: config.agentName,
+      persona: persona.label,
+      variant_id: config.variantId ?? null,
+      transcript: convo.transcript,
+      compliance_score: scored.compliance_score,
+      resolution_achieved: scored.resolution_rate >= 0.5,
+      efficiency_score: scored.context_efficiency,
+      sentiment_score: scored.borrower_sentiment,
+      overall_score: overall,
+      violations: buildViolations(scored),
+      reasoning: scored.reasoning,
+    })
+
+    conversations.push({
+      ...scored,
+      id: record.id,
+      persona: persona.label,
+      agentTokens: convo.totalAgentTokens,
+    })
+    overallScores.push(overall)
+    complianceScores.push(scored.compliance_score)
+    resolutionScores.push(scored.resolution_rate)
+    efficiencyScores.push(scored.context_efficiency)
+    sentimentScores.push(scored.borrower_sentiment)
   }
 
-  /**
-   * Get total cost for this evaluation
-   */
-  getTotalCost(): number {
-    return this.costTotal
+  const metrics: RunMetrics = {
+    runId: run.id,
+    label: config.label,
+    numConversations: conversations.length,
+    complianceRate: Number(mean(complianceScores).toFixed(2)),
+    resolutionRate: Number(mean(resolutionScores).toFixed(4)),
+    avgEfficiency: Number(mean(efficiencyScores).toFixed(4)),
+    avgSentiment: Number(mean(sentimentScores).toFixed(4)),
+    avgOverall: Number(mean(overallScores).toFixed(4)),
+    costUsd: config.tracker ? config.tracker.summary.spentUsd : 0,
+    conversations,
+    overallScores,
+    complianceScores,
+    resolutionScores,
   }
 
-  /**
-   * Check statistical significance between two results
-   */
-  static isSignificantImprovement(
-    baselineMetric: number,
-    newMetric: number,
-    confidence: number = 0.95
-  ): boolean {
-    // Simple heuristic: > 5% improvement is significant
-    const improvement = (newMetric - baselineMetric) / baselineMetric
-    return improvement > 0.05
+  await updateEvalRun(run.id, {
+    num_conversations: metrics.numConversations,
+    compliance_rate: metrics.complianceRate,
+    resolution_rate: metrics.resolutionRate,
+    avg_efficiency: metrics.avgEfficiency,
+    avg_sentiment: metrics.avgSentiment,
+    avg_overall: metrics.avgOverall,
+    cost_usd: metrics.costUsd,
+  })
+
+  return metrics
+}
+
+/** Identify the weakest compliance rules across a run (for targeted prompt mutation). */
+export function weakestRules(conversations: ConversationRecord[], topN = 3): string[] {
+  const ruleKeys: (keyof ScoredConversation)[] = [
+    'rule_1_identity',
+    'rule_2_tone',
+    'rule_3_threats',
+    'rule_4_privacy',
+    'rule_5_harassment',
+    'rule_6_accuracy',
+    'rule_7_debt_validity',
+    'rule_8_calls',
+  ]
+  const labels: Record<string, string> = {
+    rule_1_identity: 'identity disclosure',
+    rule_2_tone: 'professional tone',
+    rule_3_threats: 'no illegal threats',
+    rule_4_privacy: 'privacy / no third-party disclosure',
+    rule_5_harassment: 'no harassment',
+    rule_6_accuracy: 'accurate debt info',
+    rule_7_debt_validity: 'debt validation handling',
+    rule_8_calls: 'call-time / frequency',
   }
+  const averages = ruleKeys.map((k) => ({
+    key: k as string,
+    avg: mean(conversations.map((c) => Number(c[k]) || 0)),
+  }))
+  return averages
+    .sort((a, b) => a.avg - b.avg)
+    .slice(0, topN)
+    .map((r) => `${labels[r.key]} (${r.avg.toFixed(0)}/100)`)
+}
 
-  /**
-   * Get evaluation results by run_id
-   */
-  async getRunResults(runId: string): Promise<any> {
-    const { data, error } = await supabaseAdmin
-      .from('conversation_scores')
-      .select('*')
-      .eq('evaluation_run_id', runId)
-
-    if (error) throw error
-
-    const results = data || []
-    const avgResolution =
-      results.reduce((sum, r) => sum + r.resolution_rate, 0) / results.length
-    const avgCompliance =
-      results.reduce((sum, r) => sum + r.compliance_score, 0) / results.length
-    const avgEfficiency =
-      results.reduce((sum, r) => sum + r.context_efficiency, 0) / results.length
-
-    return {
-      totalConversations: results.length,
-      avgResolution,
-      avgCompliance,
-      avgEfficiency,
-      results,
-    }
+function buildViolations(scored: ScoredConversation): string[] {
+  const out: string[] = []
+  const checks: [keyof ScoredConversation, string][] = [
+    ['rule_1_identity', 'identity disclosure'],
+    ['rule_2_tone', 'professional tone'],
+    ['rule_3_threats', 'illegal threats'],
+    ['rule_4_privacy', 'privacy'],
+    ['rule_5_harassment', 'harassment'],
+    ['rule_6_accuracy', 'accuracy'],
+    ['rule_7_debt_validity', 'debt validation'],
+    ['rule_8_calls', 'call-time'],
+  ]
+  for (const [k, label] of checks) {
+    if ((Number(scored[k]) || 0) < 80) out.push(label)
   }
+  return out
 }

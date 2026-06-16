@@ -64,8 +64,12 @@ export default function Dashboard() {
     setEvaluationMessage('Starting evaluation...');
 
     try {
-      const response = await fetch('/api/evaluation/run?batchSize=5&seed=42');
-      
+      const response = await fetch('/api/evaluation/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentName: 'assessment', batchSize: 4, maxTurns: 4 }),
+      });
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Evaluation failed');
@@ -75,16 +79,13 @@ export default function Dashboard() {
 
       if (data.success && data.evaluation) {
         setEvaluationStatus('success');
-        const complianceScore = typeof data.evaluation.avg_compliance_score === 'number' 
-          ? (data.evaluation.avg_compliance_score * 100).toFixed(1)
-          : parseFloat(data.evaluation.avg_compliance_score) * 100;
-        const msg = `✓ Evaluation complete: ${data.evaluation.total_conversations} conversations evaluated. Avg Resolution: ${(data.evaluation.avg_resolution_rate * 100).toFixed(1)}%, Compliance: ${complianceScore}%, Cost: $${data.totalCost}`;
+        const ev = data.evaluation;
+        const msg = `✓ Evaluated ${ev.total_conversations} live conversations. Resolution: ${(ev.avg_resolution_rate * 100).toFixed(0)}%, Compliance: ${ev.avg_compliance_score.toFixed(1)}/100, Overall: ${ev.avg_overall.toFixed(3)}, Cost: $${data.cost?.spentUsd?.toFixed(4) ?? '0'}`;
         setEvaluationMessage(msg);
         setTimeout(() => {
           setEvaluationStatus('idle');
           setEvaluationMessage('');
-          loadDashboard();
-        }, 3000);
+        }, 5000);
       } else {
         throw new Error(data.error || 'Unknown error');
       }
@@ -106,10 +107,7 @@ export default function Dashboard() {
       const response = await fetch('/api/prompts/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentName: 'assessment',
-          improvementArea: 'compliance',
-        }),
+        body: JSON.stringify({ agentName: 'assessment' }),
       });
 
       if (!response.ok) {
@@ -122,12 +120,12 @@ export default function Dashboard() {
       if (data.success && data.variant) {
         setEvaluationStatus('success');
         setEvaluationMessage(
-          `✓ Generated new ${data.variant.agent_name} variant: ${data.variant.variant_letter}. Expected improvement: ${data.variant.metadata.expected_improvement}`
+          `✓ Generated ${data.variant.agent_name} v${data.variant.version}. Run the full loop in the Learning Lab to test & adopt it.`
         );
         setTimeout(() => {
           setEvaluationStatus('idle');
           setEvaluationMessage('');
-        }, 4000);
+        }, 5000);
       } else {
         throw new Error(data.error || 'Unknown error');
       }
@@ -541,6 +539,23 @@ export default function Dashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* Self-Learning Lab CTA */}
+                <div className="p-6 rounded-lg bg-blue-900/20 border border-blue-700 flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white mb-1">Self-Learning Lab</h3>
+                    <p className="text-blue-200 text-sm">
+                      Run the full closed loop: baseline → candidate → t-test → compliance-gated adoption, plus
+                      Darwin-Gödel meta-evaluation and the evolution report.
+                    </p>
+                  </div>
+                  <Link
+                    href="/learning"
+                    className="px-5 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition whitespace-nowrap"
+                  >
+                    Open Learning Lab
+                  </Link>
+                </div>
 
                 {/* Evaluation Info */}
                 <div className="p-6 rounded-lg bg-slate-800/50 border border-slate-700">
