@@ -207,12 +207,15 @@ export async function POST(req: Request) {
     for (const statement of sqlStatements) {
       try {
         console.log('[v0] Executing:', statement.substring(0, 50) + '...')
-        const { error } = await supabase.rpc('exec_sql', {
-          sql: statement,
-        }).catch(() => ({ error: null })) // RPC might not exist, that's ok
-
-        if (error) {
-          console.log('[v0] RPC failed, trying direct approach...')
+        try {
+          const { error } = await supabase.rpc('exec_sql', {
+            sql: statement,
+          })
+          if (error) {
+            console.log('[v0] RPC failed:', error)
+          }
+        } catch {
+          // RPC might not exist, that's ok
         }
         successCount++
       } catch (err: any) {

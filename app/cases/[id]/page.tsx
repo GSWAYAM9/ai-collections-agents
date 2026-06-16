@@ -108,7 +108,7 @@ export default function CaseDetailsPage() {
   };
 
   const handleStatusChange = async (newStatus: string) => {
-    setCaseData(prev => ({ ...prev, status: newStatus }));
+    setCaseData((prev: any) => ({ ...prev, status: newStatus }));
   };
 
   const initiateVoiceCall = async () => {
