@@ -99,3 +99,86 @@ export async function insertConversationScores(data: any) {
   if (error) throw error
   return result?.[0]
 }
+
+// ---------------------------------------------------------------------------
+// Self-learning + meta-evaluation helpers
+// ---------------------------------------------------------------------------
+
+// Get the currently adopted prompt variant for an agent (latest adopted)
+export async function getAdoptedVariant(agentName: string) {
+  const { data, error } = await supabaseAdmin
+    .from('prompt_variants')
+    .select('*')
+    .eq('agent_name', agentName)
+    .not('adopted_at', 'is', null)
+    .order('version', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  return data?.[0] ?? null
+}
+
+// Get the highest version number stored for an agent
+export async function getMaxVariantVersion(agentName: string): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('prompt_variants')
+    .select('version')
+    .eq('agent_name', agentName)
+    .order('version', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  return data?.[0]?.version ?? 0
+}
+
+export async function insertPromptVariant(data: any) {
+  const { data: result, error } = await supabaseAdmin
+    .from('prompt_variants')
+    .insert([data])
+    .select()
+  if (error) throw error
+  return result?.[0]
+}
+
+export async function adoptVariant(variantId: string) {
+  const { error } = await supabaseAdmin
+    .from('prompt_variants')
+    .update({ adopted_at: new Date().toISOString() })
+    .eq('id', variantId)
+  if (error) throw error
+}
+
+export async function insertVariantTestResult(data: any) {
+  const { data: result, error } = await supabaseAdmin
+    .from('variant_test_results')
+    .insert([data])
+    .select()
+  if (error) throw error
+  return result?.[0]
+}
+
+export async function insertDisagreement(data: any) {
+  const { data: result, error } = await supabaseAdmin
+    .from('evaluation_disagreements')
+    .insert([data])
+    .select()
+  if (error) throw error
+  return result?.[0]
+}
+
+export async function insertTemporalEvent(data: any) {
+  const { data: result, error } = await supabaseAdmin
+    .from('temporal_events')
+    .insert([data])
+    .select()
+  if (error) throw error
+  return result?.[0]
+}
+
+export async function getTemporalEvents(workflowId: string) {
+  const { data, error } = await supabaseAdmin
+    .from('temporal_events')
+    .select('*')
+    .eq('workflow_id', workflowId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}

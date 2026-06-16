@@ -1,232 +1,79 @@
 /**
- * Prompt Generation & Variant Testing
- * Generates new prompt variants and tests them
+ * Prompt generation — produces an improved candidate system prompt for an
+ * agent, driven by the REAL measured weaknesses from the baseline evaluation.
+ *
+ * Routed through the AI Gateway (no raw Anthropic key). The generator is told
+ * exactly which metrics underperformed so the mutation is targeted rather than
+ * random.
  */
 
-import { Anthropic } from '@anthropic-ai/sdk'
-import { v4 as uuidv4 } from 'uuid'
-import { supabaseAdmin, logCost } from '@/lib/supabase-client'
+import { runLLM, type CostTracker, SMART_MODEL } from '@/lib/llm'
+import type { AgentName } from '@/lib/agents/prompts'
 
-export interface PromptVariant {
-  id: string
-  agent_name: 'assessment' | 'resolution' | 'final_notice'
-  version: number
-  variant_letter: string
-  prompt_text: string
-  parent_variant_id?: string
-}
-
-export interface GenerationOptions {
-  agentName: 'assessment' | 'resolution' | 'final_notice'
-  version: number
-  parentVariant: string
-  improvementArea: string // e.g., "increase_resolution_rate", "improve_compliance"
-}
-
-export class PromptGenerator {
-  private client: Anthropic
-
-  constructor() {
-    this.client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    })
+export interface GenerateVariantParams {
+  agentName: AgentName
+  currentPrompt: string
+  /** Aggregate metrics from the baseline run, used to focus the rewrite. */
+  weaknesses: {
+    avgResolutionRate: number
+    avgComplianceScore: number
+    avgContextEfficiency: number
+    weakestRules: string[]
   }
+  model?: string
+  tracker?: CostTracker
+}
 
-  /**
-   * Generate new prompt variant
-   */
-  async generateVariant(options: GenerationOptions): Promise<PromptVariant> {
-    const { agentName, version, parentVariant, improvementArea } = options
+export interface GeneratedVariant {
+  promptText: string
+  inputTokens: number
+  outputTokens: number
+  costUsd: number
+}
 
-    // Create generation prompt
-    const generationPrompt = `You are an expert at optimizing debt collection agent prompts.
+export async function generatePromptVariant(
+  params: GenerateVariantParams,
+): Promise<GeneratedVariant> {
+  const { agentName, currentPrompt, weaknesses } = params
 
-Current agent: ${agentName}
-Current version: ${version}
-Goal: Improve on "${improvementArea}"
+  const generationPrompt = `You are an expert at optimizing debt-collection agent system prompts for higher resolution rates WITHOUT sacrificing compliance.
+
+Agent role: ${agentName}
+
+Current measured performance of the prompt below:
+- Resolution rate: ${(weaknesses.avgResolutionRate * 100).toFixed(1)}%
+- Compliance score: ${weaknesses.avgComplianceScore.toFixed(1)}/100 (must reach >= 98)
+- Context efficiency: ${(weaknesses.avgContextEfficiency * 100).toFixed(1)}%
+- Weakest compliance rules: ${weaknesses.weakestRules.join(', ') || 'none flagged'}
 
 Current prompt:
-${parentVariant}
+"""
+${currentPrompt}
+"""
 
-Generate an improved version of this prompt that:
-1. Keeps all compliance rules intact
-2. Better addresses "${improvementArea}"
-3. Is clearer and more actionable
-4. Maintains professional tone
-5. Stays under 500 tokens
+Produce an improved system prompt that:
+1. Keeps EVERY hard compliance rule intact (and strengthens the weakest rules listed above).
+2. Increases the likelihood of reaching a compliant resolution / agreement.
+3. Encourages concise, token-efficient replies.
+4. Stays clear and directly usable as a system prompt.
 
-Output ONLY the new prompt text, no explanation.`
+Output ONLY the new system prompt text. No preamble, no explanation, no quotes.`
 
-    const response = await this.client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1000,
-      messages: [
-        {
-          role: 'user',
-          content: generationPrompt,
-        },
-      ],
-    })
+  const result = await runLLM({
+    model: params.model ?? SMART_MODEL,
+    system: 'You rewrite system prompts. Output only the prompt text.',
+    prompt: generationPrompt,
+    maxOutputTokens: 700,
+    temperature: 0.8,
+    component: 'prompt_generation',
+    operation: 'prompt_generation',
+    tracker: params.tracker,
+  })
 
-    const newPromptText = (response.content[0] as any).text
-
-    // Log cost
-    await logCost({
-      component: 'prompt_generation',
-      provider: 'anthropic',
-      input_tokens: response.usage.input_tokens,
-      output_tokens: response.usage.output_tokens,
-      cost_usd:
-        (response.usage.input_tokens * 0.003 +
-          response.usage.output_tokens * 0.015) /
-        1000,
-      operation: 'prompt_generation',
-      metadata: { agent: agentName, improvement: improvementArea },
-    })
-
-    // Get next variant letter
-    const variantLetter = this.getNextVariantLetter(version)
-
-    // Store in database
-    const { data: newVariant, error } = await supabaseAdmin
-      .from('prompt_variants')
-      .insert([
-        {
-          agent_name: agentName,
-          version,
-          variant_letter: variantLetter,
-          prompt_text: newPromptText,
-          generation_method: 'llm_generated',
-          parent_variant_id: null,
-        },
-      ])
-      .select()
-
-    if (error) throw error
-
-    return newVariant[0]
-  }
-
-  /**
-   * Get next variant letter (A, B, C, etc.)
-   */
-  private getNextVariantLetter(version: number): string {
-    // Assuming versions increment, letters cycle through alphabet
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    return letters[version % letters.length]
-  }
-
-  /**
-   * Compare two prompt variants
-   */
-  async compareVariants(
-    variantA: PromptVariant,
-    variantB: PromptVariant,
-    evaluationResults: {
-      variantA_metrics: any
-      variantB_metrics: any
-    }
-  ): Promise<{ winner: string; reason: string; confidence: number }> {
-    const { variantA_metrics, variantB_metrics } = evaluationResults
-
-    // Calculate improvement
-    const resolutionImprovement =
-      (variantB_metrics.avg_resolution_rate -
-        variantA_metrics.avg_resolution_rate) /
-      variantA_metrics.avg_resolution_rate
-
-    const complianceImprovement =
-      (variantB_metrics.avg_compliance_score -
-        variantA_metrics.avg_compliance_score) /
-      variantA_metrics.avg_compliance_score
-
-    // Variant B is better if both metrics improved (or compliance improved significantly)
-    const complianceIsHigher = variantB_metrics.avg_compliance_score > 98 // Compliance threshold
-    const resolutionIsHigher =
-      variantB_metrics.avg_resolution_rate > variantA_metrics.avg_resolution_rate
-    const efficiencyIsHigher =
-      variantB_metrics.avg_context_efficiency >
-      variantA_metrics.avg_context_efficiency
-
-    const isSignificantImprovement =
-      resolutionImprovement > 0.05 || complianceImprovement > 0.02
-
-    const winner =
-      complianceIsHigher && (resolutionIsHigher || efficiencyIsHigher)
-        ? 'B'
-        : 'A'
-
-    return {
-      winner: `Variant ${winner}`,
-      reason:
-        winner === 'B'
-          ? `${resolutionImprovement > 0 ? `+${(resolutionImprovement * 100).toFixed(1)}% resolution, ` : ''}+${(complianceImprovement * 100).toFixed(1)}% compliance`
-          : 'Variant A maintains better compliance/resolution balance',
-      confidence: Math.abs(complianceImprovement) > 0.1 ? 0.95 : 0.7,
-    }
-  }
-}
-
-/**
- * Variant Testing Manager
- */
-export class VariantTester {
-  /**
-   * Test a variant against baseline
-   */
-  async testVariant(
-    variantId: string,
-    evaluationRunId: string,
-    baselineMetrics: any
-  ): Promise<{ significant: boolean; improvement: number; newMetrics: any }> {
-    // Fetch variant test results
-    const { data: testResults, error } = await supabaseAdmin
-      .from('variant_test_results')
-      .select('*')
-      .eq('variant_id', variantId)
-      .eq('evaluation_run_id', evaluationRunId)
-
-    if (error) throw error
-
-    const result = testResults?.[0]
-
-    if (!result) {
-      return {
-        significant: false,
-        improvement: 0,
-        newMetrics: {},
-      }
-    }
-
-    // Calculate improvement over baseline
-    const resolutionImprovement =
-      result.improvement_over_baseline || 0
-
-    const isSignificant =
-      resolutionImprovement > 0.05 &&
-      result.meets_compliance_threshold &&
-      result.statistical_significance < 0.05 // p < 0.05
-
-    return {
-      significant: isSignificant,
-      improvement: resolutionImprovement,
-      newMetrics: {
-        avg_resolution_rate: result.avg_resolution_rate,
-        avg_compliance_score: result.avg_compliance_score,
-        avg_context_efficiency: result.avg_context_efficiency,
-      },
-    }
-  }
-
-  /**
-   * Adopt winning variant as new baseline
-   */
-  async adoptVariant(variantId: string): Promise<void> {
-    const { error } = await supabaseAdmin
-      .from('prompt_variants')
-      .update({ adopted_at: new Date().toISOString() })
-      .eq('id', variantId)
-
-    if (error) throw error
+  return {
+    promptText: result.text.trim(),
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    costUsd: result.costUsd,
   }
 }
