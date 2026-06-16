@@ -143,6 +143,9 @@ export default function LearningLab() {
             <p className="text-xs text-slate-400">Self-Learning Lab</p>
           </div>
           <div className="flex gap-2">
+            <Link href="/orchestrator" className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">
+              Orchestrator
+            </Link>
             <Link href="/dashboard" className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">
               Dashboard
             </Link>
