@@ -1,10 +1,13 @@
 /**
- * Unified LLM module — routes ALL model calls through the Vercel AI Gateway.
+ * Unified LLM module — routes ALL model calls directly to the Anthropic API
+ * via @ai-sdk/anthropic and the project's ANTHROPIC_API_KEY.
  *
- * This replaces the previous direct @anthropic-ai/sdk usage (which depended on a
- * raw ANTHROPIC_API_KEY and was failing with 401 invalid x-api-key). The AI
- * Gateway supports Anthropic zero-config inside v0, so agent / borrower / judge
- * calls now actually run live in the preview.
+ * This replaces the previous direct @anthropic-ai/sdk usage AND the AI Gateway
+ * path. Calls are billed to the Anthropic account that owns ANTHROPIC_API_KEY,
+ * so no Vercel AI Gateway card is required.
+ *
+ * NOTE: if you see `401 invalid x-api-key`, the ANTHROPIC_API_KEY in the project
+ * is missing/invalid — replace it in Project Settings > Vars.
  *
  * It also provides:
  *  - Real per-token cost computation + persistent logging to `cost_log`
@@ -13,24 +16,37 @@
  */
 
 import { generateText, Output } from 'ai'
+import { createAnthropic } from '@ai-sdk/anthropic'
 import type { z } from 'zod'
 import { logCost } from '@/lib/supabase-client'
 
 // ---------------------------------------------------------------------------
-// Models (validated against the live AI Gateway model list)
+// Provider — bound explicitly to ANTHROPIC_API_KEY
+// ---------------------------------------------------------------------------
+
+const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+})
+
+// ---------------------------------------------------------------------------
+// Models (native Anthropic model IDs)
 // ---------------------------------------------------------------------------
 
 /** Cheap, fast model — used for bounded demo runs (sims, agents, judge). */
-export const CHEAP_MODEL = 'anthropic/claude-haiku-4.5'
+export const CHEAP_MODEL = 'claude-haiku-4-5'
 /** Higher-quality model — available for production-grade runs. */
-export const SMART_MODEL = 'anthropic/claude-sonnet-4.6'
+export const SMART_MODEL = 'claude-sonnet-4-5'
+
+/** Resolves a model id string to an Anthropic language model instance. */
+function resolveModel(model: string) {
+  return anthropic(model)
+}
 
 /** Approx USD pricing per 1M tokens. Used for cost logging + ceiling enforcement. */
 const PRICING: Record<string, { input: number; output: number }> = {
-  'anthropic/claude-haiku-4.5': { input: 1.0, output: 5.0 },
-  'anthropic/claude-sonnet-4.6': { input: 3.0, output: 15.0 },
-  'anthropic/claude-sonnet-4.5': { input: 3.0, output: 15.0 },
-  'anthropic/claude-3.5-haiku': { input: 0.8, output: 4.0 },
+  'claude-haiku-4-5': { input: 1.0, output: 5.0 },
+  'claude-sonnet-4-5': { input: 3.0, output: 15.0 },
+  'claude-3-5-haiku-latest': { input: 0.8, output: 4.0 },
 }
 
 function priceFor(model: string) {
@@ -130,7 +146,7 @@ async function persistCost(
   try {
     await logCost({
       component,
-      provider: 'ai-gateway',
+      provider: 'anthropic',
       input_tokens: inputTokens,
       output_tokens: outputTokens,
       cost_usd: costUsd,
@@ -149,7 +165,7 @@ export async function runLLM(opts: RunLLMOptions): Promise<LLMResult> {
   opts.tracker?.assertHasBudget()
 
   const result = await generateText({
-    model,
+    model: resolveModel(model),
     system: opts.system,
     ...(opts.messages ? { messages: opts.messages } : { prompt: opts.prompt ?? '' }),
     maxOutputTokens: opts.maxOutputTokens ?? 600,
@@ -181,7 +197,7 @@ export async function runStructured<T extends z.ZodType>(
   opts.tracker?.assertHasBudget()
 
   const result = await generateText({
-    model,
+    model: resolveModel(model),
     system: opts.system,
     ...(opts.messages ? { messages: opts.messages } : { prompt: opts.prompt ?? '' }),
     maxOutputTokens: opts.maxOutputTokens ?? 800,
