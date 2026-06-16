@@ -121,7 +121,7 @@ export abstract class BaseAgent {
 
       return {
         message: assistantMessage,
-        stopReason: response.stop_reason,
+        stopReason: response.stop_reason ?? 'end_turn',
         inputTokens: input_tokens,
         outputTokens: output_tokens,
       }

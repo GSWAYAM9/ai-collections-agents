@@ -90,7 +90,7 @@ export function extractCaseInfo(
  * Validate transcript completeness
  */
 export function isTranscriptComplete(transcript: string): boolean {
-  return (
+  return !!(
     transcript && transcript.length > 50 && transcript.includes('Agent:')
   )
 }
