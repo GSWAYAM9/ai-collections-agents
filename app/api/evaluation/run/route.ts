@@ -1,56 +1,76 @@
 /**
- * API Route: GET /api/evaluation/run
- * Runs evaluation harness
+ * POST /api/evaluation/run
+ * Runs a REAL evaluation batch for one agent prompt: live agent <-> borrower
+ * conversations, LLM judge scoring, persisted to eval_runs / eval_conversations.
+ *
+ * Body: { agentName?, batchSize?, maxTurns?, costCeilingUsd? }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { CostTracker, CHEAP_MODEL } from '@/lib/llm'
+import { BASELINE_PROMPTS, type AgentName } from '@/lib/agents/prompts'
+import { resolveCurrentPrompt } from '@/lib/learning/self-learning-loop'
+import { runEvaluation, weakestRules } from '@/lib/evaluation/evaluation-harness'
 
-export async function GET(req: NextRequest) {
+export const maxDuration = 300
+
+export async function POST(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url)
-    const batchSize = parseInt(searchParams.get('batchSize') || '5', 10)
-    const seed = parseInt(searchParams.get('seed') || '42', 10)
+    const body = await req.json().catch(() => ({}))
+    const agentName = (body.agentName ?? 'assessment') as AgentName
+    const batchSize = Math.min(Math.max(parseInt(body.batchSize ?? 4, 10), 1), 10)
+    const maxTurns = Math.min(Math.max(parseInt(body.maxTurns ?? 4, 10), 2), 6)
+    const ceiling = Number(body.costCeilingUsd ?? 1.5)
 
-    console.log('[v0] Running evaluation with batchSize:', batchSize, 'seed:', seed)
-
-    // Simulate evaluation results
-    const mockResults = {
-      success: true,
-      evaluation: {
-        run_id: `eval-${Date.now()}`,
-        batch_size: batchSize,
-        total_conversations: batchSize,
-        avg_resolution_rate: 0.72 + Math.random() * 0.15, // 72-87%
-        avg_compliance_score: 0.95 + Math.random() * 0.04, // 95-99%
-        avg_context_efficiency: 0.68 + Math.random() * 0.2, // 68-88%
-        avg_borrower_sentiment: 0.64 + Math.random() * 0.25, // 64-89%
-        metadata: {
-          variantsTested: ['baseline'],
-          seedUsed: seed,
-          timestamp: new Date().toISOString(),
-          scenarios: [
-            { name: 'Sympathetic-Struggling', outcomes: Math.floor(Math.random() * batchSize * 0.4) + 1 },
-            { name: 'Defensive-Limited', outcomes: Math.floor(Math.random() * batchSize * 0.3) + 1 },
-            { name: 'Cooperative-Resourceful', outcomes: Math.floor(Math.random() * batchSize * 0.3) },
-          ],
-        },
-      },
-      totalCost: (batchSize * 0.008).toFixed(4),
-      message: `Evaluation completed for ${batchSize} borrower scenarios`,
+    if (!BASELINE_PROMPTS[agentName]) {
+      return NextResponse.json({ success: false, error: `Unknown agent: ${agentName}` }, { status: 400 })
     }
 
-    console.log('[v0] Evaluation results:', mockResults)
+    console.log('[v0] Running REAL evaluation', { agentName, batchSize, maxTurns })
 
-    return NextResponse.json(mockResults)
+    const tracker = new CostTracker(ceiling)
+    const { prompt } = await resolveCurrentPrompt(agentName)
+
+    const metrics = await runEvaluation({
+      agentName,
+      prompt,
+      label: 'manual_eval',
+      batchSize,
+      maxTurns,
+      model: CHEAP_MODEL,
+      tracker,
+    })
+
+    return NextResponse.json({
+      success: true,
+      evaluation: {
+        run_id: metrics.runId,
+        agent_name: agentName,
+        total_conversations: metrics.numConversations,
+        avg_resolution_rate: metrics.resolutionRate,
+        avg_compliance_score: metrics.complianceRate,
+        avg_context_efficiency: metrics.avgEfficiency,
+        avg_borrower_sentiment: metrics.avgSentiment,
+        avg_overall: metrics.avgOverall,
+        weakest_rules: weakestRules(metrics.conversations),
+        conversations: metrics.conversations.map((c) => ({
+          id: c.id,
+          persona: c.persona,
+          compliance_score: c.compliance_score,
+          resolution_rate: c.resolution_rate,
+          context_efficiency: c.context_efficiency,
+          borrower_sentiment: c.borrower_sentiment,
+          reasoning: c.reasoning,
+        })),
+      },
+      cost: tracker.summary,
+      message: `Evaluated ${metrics.numConversations} live conversations for ${agentName}`,
+    })
   } catch (error) {
     console.error('[v0] Evaluation error:', error)
     return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Evaluation failed',
-        details: 'Please ensure database is initialized via /admin page',
-      },
-      { status: 500 }
+      { success: false, error: error instanceof Error ? error.message : 'Evaluation failed' },
+      { status: 500 },
     )
   }
 }
